@@ -1,0 +1,6 @@
+{
+    "camera_id": 0,
+    "resolution": "4k",
+    "face_detection_model": "hog",
+    "confidence_threshold": 0.6
+}

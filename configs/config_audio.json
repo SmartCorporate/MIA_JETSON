@@ -1,0 +1,7 @@
+{
+    "input_device_name": "Blue Yeti",
+    "output_device_name": "USB Speakers",
+    "sample_rate": 16000,
+    "stt_engine": "vosk",
+    "vosk_model_path": "models/vosk-model-en-us"
+}
