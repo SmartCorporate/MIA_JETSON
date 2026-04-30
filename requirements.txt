@@ -1,0 +1,4 @@
+elevenlabs
+python-dotenv
+paramiko
+pyttsx3
