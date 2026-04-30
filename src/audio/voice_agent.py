@@ -241,46 +241,53 @@ class VoiceAgent:
         self._speak_offline(text)
         
     def _speak_offline(self, text):
-        """Offline TTS fallback prioritizing pico2wave (better) or espeak (female voice)"""
+        """Offline TTS fallback prioritizing espeak-ng with ffmpeg normalization for clarity"""
         try:
-            # Use a temporary WAV file to ensure we can use our optimized aplay routing
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                tmp_path = tmp.name
+            # Use temporary files for raw and normalized audio
+            with tempfile.NamedTemporaryFile(suffix="_raw.wav", delete=False) as tmp_raw:
+                raw_path = tmp_raw.name
+            with tempfile.NamedTemporaryFile(suffix="_norm.wav", delete=False) as tmp_norm:
+                norm_path = tmp_norm.name
             
             success = False
             
-            # STRATEGY 1: pico2wave (SVOX Pico) - Much better quality
-            if self.has_pico2wave:
-                print(f"[Audio] pico2wave generating offline voice (EN)...")
-                cmd = ["pico2wave", "-l=en-US", f"-w={tmp_path}", text]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                if result.returncode == 0 and os.path.getsize(tmp_path) > 0:
-                    success = True
+            # STRATEGY: espeak-ng (cleaner than espeak) + ffmpeg normalization
+            engine = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
             
-            # STRATEGY 2: espeak (Female voice en+f4)
-            if not success and self.has_espeak:
-                print(f"[Audio] espeak generating offline voice (EN Female)...")
-                # -v en+f4 is female, -p 60 is slightly higher pitch, -s 140 slightly slower
-                cmd = ["espeak", "-s", "140", "-v", "en+f4", "-p", "60", "-w", tmp_path, text]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                if result.returncode == 0 and os.path.getsize(tmp_path) > 0:
-                    success = True
+            print(f"[Audio] {engine} generating offline voice (EN-US Female)...")
+            # -v en-us+f2 is a cleaner female voice, -s 150 is natural speed
+            cmd = [engine, "-s", "150", "-v", "en-us+f2", "-w", raw_path, text]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
-            if success:
-                # Play through our standard hardware-optimized logic
-                self._play_audio_file(tmp_path)
-            else:
-                print("[Audio Error] All offline TTS engines failed or not available.")
+            if result.returncode == 0 and os.path.exists(raw_path) and os.path.getsize(raw_path) > 0:
+                if self.has_ffmpeg:
+                    print(f"[Audio] Normalizing offline audio format...")
+                    # Convert to 44100Hz, Stereo, 16-bit PCM (same as ElevenLabs path)
+                    # This prevents "echo" or metallic sounds caused by sample rate mismatches
+                    norm_cmd = [
+                        "ffmpeg", "-y", "-i", raw_path, 
+                        "-ar", "44100", "-ac", "2", "-acodec", "pcm_s16le", 
+                        norm_path
+                    ]
+                    norm_result = subprocess.run(norm_cmd, capture_output=True, text=True, timeout=30)
+                    if norm_result.returncode == 0 and os.path.exists(norm_path):
+                        self._play_audio_file(norm_path)
+                        success = True
+                else:
+                    # No ffmpeg, play raw (might have sample rate issues)
+                    self._play_audio_file(raw_path)
+                    success = True
             
             # Cleanup
-            if os.path.exists(tmp_path):
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+            for p in [raw_path, norm_path]:
+                if os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except Exception:
+                        pass
                     
         except Exception as e:
             print(f"[Audio Warning] Offline TTS error: {e}")
         
         if not success:
-            print("[Audio Error] No TTS engine available!")
+            print("[Audio Error] No offline TTS engine worked!")
