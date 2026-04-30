@@ -241,7 +241,7 @@ class VoiceAgent:
         self._speak_offline(text)
         
     def _speak_offline(self, text):
-        """Offline TTS fallback using espeak-ng and mpv for better buffer management"""
+        """Offline TTS fallback prioritizing pico2wave (much better quality)"""
         try:
             # Use a temporary WAV file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -249,18 +249,32 @@ class VoiceAgent:
             
             success = False
             
-            # STRATEGY: espeak-ng + mpv (mpv is better at handling Jetson audio buffers)
-            engine = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
+            # STRATEGY 1: pico2wave (SVOX Pico) - High quality offline female voice
+            # We check the path again in case it was just installed
+            pico_path = shutil.which("pico2wave")
+            if pico_path:
+                print(f"[Audio] pico2wave generating offline voice (EN-US)...")
+                cmd = [pico_path, "-l=en-US", f"-w={tmp_path}", text]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                    success = True
             
-            print(f"[Audio] {engine} generating offline voice (EN-US Female Smooth)...")
-            # en-us+f5 is often smoother, -s 170 is a more natural pace
-            cmd = [engine, "-s", "170", "-v", "en-us+f5", "-w", tmp_path, text]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            # STRATEGY 2: espeak-ng fallback
+            if not success:
+                engine = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
+                print(f"[Audio] {engine} generating fallback voice...")
+                # en-us+f5 is the smoothest espeak variant
+                cmd = [engine, "-s", "165", "-v", "en-us+f5", "-w", tmp_path, text]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                    success = True
             
-            if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
-                # Use mpv directly for offline voice to avoid aplay's "metallic/wave" issues on Jetson
+            if success:
+                # Use mpv for better buffer management on Jetson
                 print(f"[Audio] Playing offline voice via mpv...")
-                success = self._play_with_mpv(tmp_path)
+                self._play_with_mpv(tmp_path)
+            else:
+                print("[Audio Error] No offline TTS engine worked!")
             
             # Cleanup
             if os.path.exists(tmp_path):
@@ -271,6 +285,3 @@ class VoiceAgent:
                     
         except Exception as e:
             print(f"[Audio Warning] Offline TTS error: {e}")
-        
-        if not success:
-            print("[Audio Error] No offline TTS engine worked!")
