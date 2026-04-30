@@ -10,6 +10,16 @@ from dotenv import load_dotenv
 # Import core modules
 from audio import VoiceAgent
 
+def is_online():
+    """Check if the system has internet connectivity."""
+    import socket
+    try:
+        # Try to connect to a reliable host (Google DNS)
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
+        return True
+    except (OSError, socket.timeout):
+        return False
+
 def main():
     print("Initializing MIA_JETSON...")
     
@@ -23,10 +33,14 @@ def main():
     print("Initializing core agents...")
     voice_agent = VoiceAgent()
     
-    print("MIA is now online and listening...")
+    # Determine connectivity status for the greeting
+    online_status = is_online()
+    status_text = "online" if online_status else "offline"
     
-    # First spoken words
-    voice_agent.speak("Hello, I am Mia. My audio systems are online.")
+    print(f"MIA is now {status_text} and listening...")
+    
+    # First spoken words reflect actual connectivity
+    voice_agent.speak(f"Hello, I am Mia. My audio systems are {status_text}.")
     
     try:
         # Simple loop to keep the process alive
