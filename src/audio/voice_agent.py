@@ -274,8 +274,10 @@ class VoiceAgent:
                     success = True
             
             if success:
-                print(f"[Audio] Playing offline voice via mpv...")
-                self._play_with_mpv(tmp_path)
+                # Use our standard hardware-optimized logic (aplay -D ...)
+                # aplay is more reliable than mpv when running as a systemd service
+                print(f"[Audio] Playing offline voice via aplay...")
+                self._play_audio_file(tmp_path)
             else:
                 print("[Audio Error] No offline TTS engine worked!")
             

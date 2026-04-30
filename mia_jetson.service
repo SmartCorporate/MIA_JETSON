@@ -1,0 +1,19 @@
+[Unit]
+Description=MIA JETSON AI Assistant
+After=network.target audio.target
+
+[Service]
+# Environment variables can be loaded from .env file by the application itself
+# or we could use EnvironmentFile= here. 
+# Using python-dotenv inside main.py handles it if WorkingDirectory is set.
+ExecStart=/usr/bin/python3 -u src/main.py
+WorkingDirectory=/home/mia/MIA_JETSON
+User=mia
+SupplementaryGroups=audio
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/mia/MIA_JETSON/mia.log
+StandardError=append:/home/mia/MIA_JETSON/mia.log
+
+[Install]
+WantedBy=multi-user.target
