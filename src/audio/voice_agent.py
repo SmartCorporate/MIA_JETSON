@@ -243,12 +243,33 @@ class VoiceAgent:
         """Offline TTS fallback using espeak (most reliable on Jetson)"""
         if self.has_espeak:
             try:
-                cmd = ["espeak", "-s", "150", "-v", "en+f3", text]
-                print(f"[Audio] espeak fallback...")
+                # Use a temporary WAV file to ensure we can use our optimized aplay routing
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    tmp_path = tmp.name
+                
+                # Generate WAV with espeak (English language)
+                # -w saves to file, -s 150 is speed
+                cmd = ["espeak", "-s", "150", "-v", "en", "-w", tmp_path, text]
+                print(f"[Audio] espeak generating offline voice (EN)...")
+                
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                if result.returncode == 0:
+                
+                if result.returncode == 0 and os.path.exists(tmp_path):
+                    # Play through our standard hardware-optimized logic
+                    self._play_audio_file(tmp_path)
+                    
+                    # Cleanup
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
                     return
-                print(f"[Audio Warning] espeak failed: {result.stderr[:200]}")
+                
+                print(f"[Audio Warning] espeak failed (code {result.returncode}): {result.stderr[:200]}")
+                # Cleanup if failed
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                    
             except Exception as e:
                 print(f"[Audio Warning] espeak error: {e}")
         
