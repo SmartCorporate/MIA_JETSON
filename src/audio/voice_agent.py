@@ -241,50 +241,33 @@ class VoiceAgent:
         self._speak_offline(text)
         
     def _speak_offline(self, text):
-        """Offline TTS fallback prioritizing espeak-ng with ffmpeg normalization for clarity"""
+        """Offline TTS fallback using espeak-ng and mpv for better buffer management"""
         try:
-            # Use temporary files for raw and normalized audio
-            with tempfile.NamedTemporaryFile(suffix="_raw.wav", delete=False) as tmp_raw:
-                raw_path = tmp_raw.name
-            with tempfile.NamedTemporaryFile(suffix="_norm.wav", delete=False) as tmp_norm:
-                norm_path = tmp_norm.name
+            # Use a temporary WAV file
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
             
             success = False
             
-            # STRATEGY: espeak-ng (cleaner than espeak) + ffmpeg normalization
+            # STRATEGY: espeak-ng + mpv (mpv is better at handling Jetson audio buffers)
             engine = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
             
-            print(f"[Audio] {engine} generating offline voice (EN-US Female)...")
-            # -v en-us+f2 is a cleaner female voice, -s 150 is natural speed
-            cmd = [engine, "-s", "150", "-v", "en-us+f2", "-w", raw_path, text]
+            print(f"[Audio] {engine} generating offline voice (EN-US Female Smooth)...")
+            # en-us+f5 is often smoother, -s 170 is a more natural pace
+            cmd = [engine, "-s", "170", "-v", "en-us+f5", "-w", tmp_path, text]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
-            if result.returncode == 0 and os.path.exists(raw_path) and os.path.getsize(raw_path) > 0:
-                if self.has_ffmpeg:
-                    print(f"[Audio] Normalizing offline audio format...")
-                    # Convert to 44100Hz, Stereo, 16-bit PCM (same as ElevenLabs path)
-                    # This prevents "echo" or metallic sounds caused by sample rate mismatches
-                    norm_cmd = [
-                        "ffmpeg", "-y", "-i", raw_path, 
-                        "-ar", "44100", "-ac", "2", "-acodec", "pcm_s16le", 
-                        norm_path
-                    ]
-                    norm_result = subprocess.run(norm_cmd, capture_output=True, text=True, timeout=30)
-                    if norm_result.returncode == 0 and os.path.exists(norm_path):
-                        self._play_audio_file(norm_path)
-                        success = True
-                else:
-                    # No ffmpeg, play raw (might have sample rate issues)
-                    self._play_audio_file(raw_path)
-                    success = True
+            if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                # Use mpv directly for offline voice to avoid aplay's "metallic/wave" issues on Jetson
+                print(f"[Audio] Playing offline voice via mpv...")
+                success = self._play_with_mpv(tmp_path)
             
             # Cleanup
-            for p in [raw_path, norm_path]:
-                if os.path.exists(p):
-                    try:
-                        os.unlink(p)
-                    except Exception:
-                        pass
+            if os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
                     
         except Exception as e:
             print(f"[Audio Warning] Offline TTS error: {e}")
