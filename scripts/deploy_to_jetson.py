@@ -30,7 +30,7 @@ def sync_directory(sftp, local_dir, remote_dir):
             
         for file in files:
             # Skip python cache or specific files
-            if file.endswith('.pyc') or file == '.env':
+            if file.endswith('.pyc'):
                 continue
                 
             local_file = os.path.join(root, file)

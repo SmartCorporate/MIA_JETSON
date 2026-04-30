@@ -1,6 +1,6 @@
 {
     "tts_engine": "elevenlabs",
-    "voice_id": "default_mia_voice",
+    "voice_id": "Rachel",
     "fallback_tts": "pyttsx3",
-    "speaking_rate": 1.0
+    "speaking_rate": 0.85
 }
