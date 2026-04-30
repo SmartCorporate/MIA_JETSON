@@ -243,6 +243,10 @@ class VoiceAgent:
     def _speak_offline(self, text):
         """Offline TTS fallback prioritizing pico2wave (much better quality)"""
         try:
+            # Pre-process text for better offline pronunciation
+            # Replace 'MIA' with 'Mee-ah' so it doesn't sound like 'Maia'
+            processed_text = text.replace("MIA", "Mee-ah").replace("mia", "mee-ah")
+            
             # Use a temporary WAV file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 tmp_path = tmp.name
@@ -250,11 +254,10 @@ class VoiceAgent:
             success = False
             
             # STRATEGY 1: pico2wave (SVOX Pico) - High quality offline female voice
-            # We check the path again in case it was just installed
             pico_path = shutil.which("pico2wave")
             if pico_path:
-                print(f"[Audio] pico2wave generating offline voice (EN-US)...")
-                cmd = [pico_path, "-l=en-US", f"-w={tmp_path}", text]
+                print(f"[Audio] pico2wave generating offline voice for: {processed_text[:50]}...")
+                cmd = [pico_path, "-l=en-US", f"-w={tmp_path}", processed_text]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
                     success = True
@@ -263,14 +266,12 @@ class VoiceAgent:
             if not success:
                 engine = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
                 print(f"[Audio] {engine} generating fallback voice...")
-                # en-us+f5 is the smoothest espeak variant
-                cmd = [engine, "-s", "165", "-v", "en-us+f5", "-w", tmp_path, text]
+                cmd = [engine, "-s", "165", "-v", "en-us+f5", "-w", tmp_path, processed_text]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
                     success = True
             
             if success:
-                # Use mpv for better buffer management on Jetson
                 print(f"[Audio] Playing offline voice via mpv...")
                 self._play_with_mpv(tmp_path)
             else:
