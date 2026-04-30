@@ -48,8 +48,9 @@ class VoiceAgent:
         self.has_aplay = shutil.which("aplay") is not None
         self.has_mpv = shutil.which("mpv") is not None
         self.has_espeak = shutil.which("espeak") is not None
+        self.has_pico2wave = shutil.which("pico2wave") is not None
         
-        print(f"[Audio] Tools: aplay={self.has_aplay}, ffmpeg={self.has_ffmpeg}, mpv={self.has_mpv}, espeak={self.has_espeak}")
+        print(f"[Audio] Tools: aplay={self.has_aplay}, ffmpeg={self.has_ffmpeg}, mpv={self.has_mpv}, espeak={self.has_espeak}, pico={self.has_pico2wave}")
 
     def _detect_alsa_device(self):
         """Auto-detect the correct ALSA playback device by checking aplay -l"""
@@ -240,37 +241,46 @@ class VoiceAgent:
         self._speak_offline(text)
         
     def _speak_offline(self, text):
-        """Offline TTS fallback using espeak (most reliable on Jetson)"""
-        if self.has_espeak:
-            try:
-                # Use a temporary WAV file to ensure we can use our optimized aplay routing
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                    tmp_path = tmp.name
-                
-                # Generate WAV with espeak (English language)
-                # -w saves to file, -s 150 is speed
-                cmd = ["espeak", "-s", "150", "-v", "en", "-w", tmp_path, text]
-                print(f"[Audio] espeak generating offline voice (EN)...")
-                
+        """Offline TTS fallback prioritizing pico2wave (better) or espeak (female voice)"""
+        try:
+            # Use a temporary WAV file to ensure we can use our optimized aplay routing
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp_path = tmp.name
+            
+            success = False
+            
+            # STRATEGY 1: pico2wave (SVOX Pico) - Much better quality
+            if self.has_pico2wave:
+                print(f"[Audio] pico2wave generating offline voice (EN)...")
+                cmd = ["pico2wave", "-l=en-US", f"-w={tmp_path}", text]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                
-                if result.returncode == 0 and os.path.exists(tmp_path):
-                    # Play through our standard hardware-optimized logic
-                    self._play_audio_file(tmp_path)
-                    
-                    # Cleanup
-                    try:
-                        os.unlink(tmp_path)
-                    except Exception:
-                        pass
-                    return
-                
-                print(f"[Audio Warning] espeak failed (code {result.returncode}): {result.stderr[:200]}")
-                # Cleanup if failed
-                if os.path.exists(tmp_path):
+                if result.returncode == 0 and os.path.getsize(tmp_path) > 0:
+                    success = True
+            
+            # STRATEGY 2: espeak (Female voice en+f4)
+            if not success and self.has_espeak:
+                print(f"[Audio] espeak generating offline voice (EN Female)...")
+                # -v en+f4 is female, -p 60 is slightly higher pitch, -s 140 slightly slower
+                cmd = ["espeak", "-s", "140", "-v", "en+f4", "-p", "60", "-w", tmp_path, text]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode == 0 and os.path.getsize(tmp_path) > 0:
+                    success = True
+            
+            if success:
+                # Play through our standard hardware-optimized logic
+                self._play_audio_file(tmp_path)
+            else:
+                print("[Audio Error] All offline TTS engines failed or not available.")
+            
+            # Cleanup
+            if os.path.exists(tmp_path):
+                try:
                     os.unlink(tmp_path)
+                except Exception:
+                    pass
                     
-            except Exception as e:
-                print(f"[Audio Warning] espeak error: {e}")
+        except Exception as e:
+            print(f"[Audio Warning] Offline TTS error: {e}")
         
-        print("[Audio Error] No TTS engine available!")
+        if not success:
+            print("[Audio Error] No TTS engine available!")
