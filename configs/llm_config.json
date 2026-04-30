@@ -1,0 +1,9 @@
+{
+    "model_path": "models/llm/mistral-7b-v0.1.Q4_K_M.gguf",
+    "max_tokens": 150,
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "offline_mode": true,
+    "system_prompt": "You are MIA, a helpful and concise AI assistant running on an NVIDIA Jetson. Your answers should be brief and natural.",
+    "inference_engine": "llama-cpp"
+}
