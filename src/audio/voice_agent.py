@@ -243,9 +243,11 @@ class VoiceAgent:
     def _speak_offline(self, text):
         """Offline TTS fallback prioritizing pico2wave (much better quality)"""
         try:
+            import re
             # Pre-process text for better offline pronunciation
-            # Replace 'MIA' with 'Mee-ah' so it doesn't sound like 'Maia'
-            processed_text = text.replace("MIA", "Mee-ah").replace("mia", "mee-ah")
+            # Replace 'MIA' with 'Mee-uh' (phonetic spelling to avoid 'Maia')
+            # Using regex to ensure we only replace the whole word
+            processed_text = re.sub(r'\bmia\b', 'Mee-uh', text, flags=re.IGNORECASE)
             
             # Use a temporary WAV file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
