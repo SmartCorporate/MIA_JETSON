@@ -97,3 +97,10 @@ class STTAgent:
         if status:
             print(f"[STT Status] {status}", file=sys.stderr)
         self.audio_queue.put(bytes(indata))
+
+    def flush_queue(self):
+        """Clears all audio currently in the queue."""
+        while not self.audio_queue.empty():
+            try: self.audio_queue.get_nowait()
+            except: break
+        print("[STT] Audio queue flushed.")

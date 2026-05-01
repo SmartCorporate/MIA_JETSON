@@ -92,10 +92,12 @@ class Orchestrator:
                 # Only listen if we are idle
                 if self.status.current_state == "idle":
                     # Listen for user input (blocks until speech is heard or timeout)
-                    # Returns (text, detected_lang)
                     user_text, detected_lang = self.stt.listen(timeout=5)
                     if user_text:
                         self.process_interaction(user_text, lang=detected_lang)
+                        # After speaking, wait a moment and clear any buffered audio (echo/noise)
+                        time.sleep(1.0)
+                        self.stt.flush_queue()
                 
                 time.sleep(0.1)
         except KeyboardInterrupt:
