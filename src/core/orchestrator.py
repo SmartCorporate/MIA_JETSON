@@ -78,8 +78,7 @@ class Orchestrator:
         print(f"[Orchestrator] Processing user input ({lang}): {user_text}")
         
         # 3. Generate response via local LLM
-        # We pass the detected language to the Brain if needed (LLM usually follows input language)
-        raw_response = self.brain.generate_response(user_text)
+        raw_response = self.brain.generate_response(user_text, lang=lang)
         
         # 4. Clean and format response
         final_text = self.generator.format_response(raw_response)

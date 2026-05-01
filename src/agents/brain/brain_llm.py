@@ -66,7 +66,7 @@ class BrainLLM:
         
         return "qwen" if "qwen" in self.models else "phi"
 
-    def generate_response(self, text_input):
+    def generate_response(self, text_input, lang="en"):
         """
         Processes the input using the appropriate model.
         """
@@ -76,12 +76,22 @@ class BrainLLM:
             return self._fallback_response(text_input)
             
         try:
-            print(f"[BrainLLM] Using model: {model_key} for input: {text_input}")
+            print(f"[BrainLLM] Using model: {model_key} for input: {text_input} ({lang})")
             model = self.models.get(model_key)
             if model:
-                # Format prompt based on model type or common instruct format
-                prompt = f"{self.config.get('system_prompt', '')}\nUser: {text_input}\nMIA:"
-                response = model(prompt, max_tokens=self.config.get('max_tokens', 150), stop=["User:", "\n"])
+                # Stronger instruction based on language
+                lang_instruction = "Rispondi in italiano." if lang == "it" else "Respond in English."
+                system_p = self.config.get('system_prompt', '')
+                
+                # ChatML-like structure often works better for these models
+                prompt = f"<|system|>\n{system_p} {lang_instruction}<|user|>\n{text_input}<|assistant|>\n"
+                
+                response = model(
+                    prompt, 
+                    max_tokens=self.config.get('max_tokens', 50), 
+                    stop=["<|user|>", "<|system|>", "User:", "\n\n"],
+                    temperature=self.config.get('temperature', 0.4)
+                )
                 return response['choices'][0]['text'].strip()
             
             return f"Error: Model {model_key} not found."

@@ -12,10 +12,10 @@
             "type": "reasoning"
         }
     },
-    "max_tokens": 150,
-    "temperature": 0.7,
-    "top_p": 0.95,
+    "max_tokens": 50,
+    "temperature": 0.4,
+    "top_p": 0.9,
     "offline_mode": true,
-    "system_prompt": "You are MIA (Modular Artificial Intelligence), a humanoid robot assistant running on NVIDIA Jetson. Your personality is helpful, direct, and slightly futuristic. Keep responses concise for voice interaction.",
+    "system_prompt": "You are MIA, a concise robot assistant. Respond ONLY in the language of the user. Maximum 2 sentences. No stories.",
     "inference_engine": "llama-cpp"
 }

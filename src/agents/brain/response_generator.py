@@ -19,8 +19,15 @@ class ResponseGenerator:
         # 1. Clean whitespace
         clean_text = raw_text.strip()
         
-        # 2. Remove potential LLM "artifacts" (like "A:" or "User:")
-        clean_text = re.sub(r'^(A:|Response:|MIA:)\s*', '', clean_text, flags=re.IGNORECASE)
+        # 2. Remove potential LLM "artifacts" (like "A:", "User:", or ChatML tags)
+        artifacts = [
+            r'^(A:|Response:|MIA:|Assistant:)\s*',
+            r'<\|.*?\|>', # Remove ChatML tags like <|user|>, <|system|>, etc.
+            r'User:.*',    # Remove any trailing "User: ..." hallucinations
+            r'Assistant:.*'
+        ]
+        for pattern in artifacts:
+            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE | re.MULTILINE).strip()
         
         # 3. Shorten if too long (TTS should be concise)
         if len(clean_text) > self.max_chars:
