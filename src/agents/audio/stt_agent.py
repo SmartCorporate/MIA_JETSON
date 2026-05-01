@@ -8,6 +8,7 @@ import sounddevice as sd
 import vosk
 import json
 import sys
+import time
 
 class STTAgent:
     def __init__(self):
