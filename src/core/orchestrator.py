@@ -58,37 +58,30 @@ class Orchestrator:
         it_keywords = {"il", "lo", "la", "i", "gli", "le", "di", "a", "da", "in", "con", "su", "per", "tra", "fra", "ciao", "come", "perché", "quando", "chi", "cosa", "non", "sono", "sei", "è"}
         words = set(text.lower().split())
         it_count = len(words.intersection(it_keywords))
-        
-        # If at least 1-2 common Italian words are found, assume Italian
-        detected = "it" if it_count >= 1 else "en"
-        print(f"[Orchestrator] Detected language: {detected} (score: {it_count})")
-        return detected
-
-    def process_interaction(self, user_text):
-        """Pipeline: Text -> Language Detect -> Brain -> Response Gen -> Voice"""
+    def process_interaction(self, user_text, lang="en"):
+        """Pipeline: Text -> Brain -> Response Gen -> Voice"""
         if not user_text:
             return
             
-        # 1. Detect Language
-        lang = self._detect_language(user_text)
+        # Update language from STT detection
         self.status.language = lang
         
-        # 2. Processing State
+        # 1. Processing State
         self.status.set_state("processing")
         print(f"[Orchestrator] Processing user input ({lang}): {user_text}")
         
-        # 3. Generate response via local LLM
+        # 2. Generate response via local LLM
         raw_response = self.brain.generate_response(user_text, lang=lang)
         
-        # 4. Clean and format response
+        # 3. Clean and format response
         final_text = self.generator.format_response(raw_response)
         
-        # 5. Speaking State
+        # 4. Speaking State
         self.status.set_state("speaking")
         print(f"[MIA Speaks] ({lang}): {final_text}")
         self.voice.speak(final_text, lang=lang)
         
-        # 6. Return to idle
+        # 5. Return to idle
         self.status.set_state("idle")
 
     def run_forever(self):
@@ -99,9 +92,10 @@ class Orchestrator:
                 # Only listen if we are idle
                 if self.status.current_state == "idle":
                     # Listen for user input (blocks until speech is heard or timeout)
-                    user_text = self.stt.listen(timeout=5)
+                    # Returns (text, detected_lang)
+                    user_text, detected_lang = self.stt.listen(timeout=5)
                     if user_text:
-                        self.process_interaction(user_text)
+                        self.process_interaction(user_text, lang=detected_lang)
                 
                 time.sleep(0.1)
         except KeyboardInterrupt:

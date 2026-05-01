@@ -74,44 +74,48 @@ class STTAgent:
 
     def listen(self, timeout=10):
         """
-        Listens for a complete sentence and returns the transcribed text.
-        Returns None if nothing is heard or an error occurs.
+        Listens for a complete sentence using both EN and IT recognizers in parallel.
+        Returns (text, lang) or (None, None).
         """
-        recognizer = self.recognizers.get(self.current_lang)
-        if not recognizer:
-            return None
+        if not self.recognizers:
+            print("[STT Error] No recognizers available.")
+            return None, None
 
-        print(f"[STT] Listening ({self.current_lang})...")
+        print(f"[STT] Listening for EN/IT (Yeti Index: {self.device_index})...")
         try:
-            with sd.RawInputStream(samplerate=self.sample_rate, blocksize=8000, 
+            with sd.RawInputStream(samplerate=self.sample_rate, blocksize=4000, 
                                    device=self.device_index,
                                    dtype='int16', channels=1, callback=self._audio_callback):
                 
-                # Clear the queue from any old audio
-                while not self.audio_queue.empty():
-                    self.audio_queue.get()
+                # Clear queue
+                while not self.audio_queue.empty(): self.audio_queue.get()
 
-                # Process audio until a result is found
-                import time
                 start_time = time.time()
-                
                 while time.time() - start_time < timeout:
-                    data = self.audio_queue.get()
-                    if recognizer.AcceptWaveform(data):
-                        result = json.loads(recognizer.Result())
-                        text = result.get("text", "").strip()
-                        if text:
-                            print(f"[STT] Heard: {text}")
-                            return text
+                    try:
+                        data = self.audio_queue.get(timeout=0.5)
+                        
+                        # Feed to all active recognizers
+                        for lang, rec in self.recognizers.items():
+                            if rec.AcceptWaveform(data):
+                                result = json.loads(rec.Result())
+                                text = result.get("text", "").strip()
+                                if text:
+                                    print(f"[STT] Heard ({lang}): {text}")
+                                    # Reset all recognizers for next time
+                                    for r in self.recognizers.values(): r.Reset()
+                                    return text, lang
+                    except queue.Empty:
+                        continue
                 
-                # If we timeout, return whatever we have in the final result
-                result = json.loads(recognizer.FinalResult())
-                text = result.get("text", "").strip()
-                if text:
-                    print(f"[STT] Heard (Timeout): {text}")
-                    return text
+                # Final result check if timeout
+                for lang, rec in self.recognizers.items():
+                    result = json.loads(rec.FinalResult())
+                    text = result.get("text", "").strip()
+                    if text:
+                        return text, lang
 
         except Exception as e:
-            print(f"[STT Error] During listening: {e}")
+            print(f"[STT Error] {e}")
         
-        return None
+        return None, None
