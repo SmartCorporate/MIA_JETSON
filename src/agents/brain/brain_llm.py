@@ -79,18 +79,26 @@ class BrainLLM:
             print(f"[BrainLLM] Using model: {model_key} for input: {text_input} ({lang})")
             model = self.models.get(model_key)
             if model:
+                # Dynamic verbosity check
+                text_lower = text_input.lower()
+                verbose_keywords = ["spiegamelo meglio", "spiega meglio", "approfondisci", "spiegami", "dimmi di più", "più dettagli"]
+                is_verbose = any(kw in text_lower for kw in verbose_keywords)
+                
+                max_t = 100 if is_verbose else 30
+                brevity_instr = "Puoi usare fino a 100 parole." if is_verbose else "Rispondi in MASSIMO 10 PAROLE."
+                
                 # Force language and directness
                 lang_instruction = "IMPORTANT: Respond ONLY in Italian." if lang == "it" else "IMPORTANT: Respond ONLY in English."
-                system_p = self.config.get('system_prompt', '')
+                system_p = self.config.get('system_prompt', 'Sei MIA, un robot conciso.')
                 
                 # Enhanced ChatML for better adherence
-                prompt = f"<|system|>\n{system_p}\n{lang_instruction}\nRespond directly. No stories.\n<|user|>\n{text_input}\n<|assistant|>\n"
+                prompt = f"<|system|>\n{system_p}\n{lang_instruction}\n{brevity_instr}\nRespond directly. No stories.\n<|user|>\n{text_input}\n<|assistant|>\n"
                 
                 response = model(
                     prompt, 
-                    max_tokens=self.config.get('max_tokens', 50), 
+                    max_tokens=max_t, 
                     stop=["<|user|>", "<|system|>", "User:", "\n\n", "User"],
-                    temperature=0.3 # Lower temperature for less 'nonsense'
+                    temperature=0.3
                 )
                 return response['choices'][0]['text'].strip()
             
