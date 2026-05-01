@@ -184,9 +184,9 @@ class VoiceAgent:
         
         return False
 
-    def speak(self, text):
+    def speak(self, text, lang="en"):
         """Riproduce l'audio usando ElevenLabs, e se fallisce usa espeak/pyttsx3 (offline)"""
-        print(f"[MIA Speaks]: {text}")
+        print(f"[MIA Speaks] ({lang}): {text}")
         
         if self.elevenlabs_client:
             try:
@@ -215,7 +215,7 @@ class VoiceAgent:
                 if file_size < 100:
                     print("[Audio Warning] Audio file too small, ElevenLabs may have returned empty audio")
                     os.unlink(tmp_path)
-                    self._speak_offline(text)
+                    self._speak_offline(text, lang=lang)
                     return
                 
                 # Play the audio file
@@ -238,15 +238,14 @@ class VoiceAgent:
             print("[Audio Warning] ElevenLabs non disponibile. Uso fallback offline.")
             
         # Fallback Offline
-        self._speak_offline(text)
+        self._speak_offline(text, lang=lang)
         
-    def _speak_offline(self, text):
+    def _speak_offline(self, text, lang="en"):
         """Offline TTS fallback prioritizing pico2wave (much better quality)"""
         try:
             import re
             # Pre-process text for better offline pronunciation
             # Replace 'MIA' with 'Mee-uh' (phonetic spelling to avoid 'Maia')
-            # Using regex to ensure we only replace the whole word
             processed_text = re.sub(r'\bmia\b', 'Mee-uh', text, flags=re.IGNORECASE)
             
             # Use a temporary WAV file
@@ -255,11 +254,15 @@ class VoiceAgent:
             
             success = False
             
+            # Determine engine language parameters
+            pico_lang = "it-IT" if lang == "it" else "en-US"
+            espeak_lang = "it" if lang == "it" else "en-us+f5"
+            
             # STRATEGY 1: pico2wave (SVOX Pico) - High quality offline female voice
             pico_path = shutil.which("pico2wave")
             if pico_path:
-                print(f"[Audio] pico2wave generating offline voice for: {processed_text[:50]}...")
-                cmd = [pico_path, "-l=en-US", f"-w={tmp_path}", processed_text]
+                print(f"[Audio] pico2wave generating offline voice ({pico_lang})...")
+                cmd = [pico_path, f"-l={pico_lang}", f"-w={tmp_path}", processed_text]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
                     success = True
@@ -267,8 +270,8 @@ class VoiceAgent:
             # STRATEGY 2: espeak-ng fallback
             if not success:
                 engine = "espeak-ng" if shutil.which("espeak-ng") else "espeak"
-                print(f"[Audio] {engine} generating fallback voice...")
-                cmd = [engine, "-s", "165", "-v", "en-us+f5", "-w", tmp_path, processed_text]
+                print(f"[Audio] {engine} generating fallback voice ({espeak_lang})...")
+                cmd = [engine, "-s", "165", "-v", espeak_lang, "-w", tmp_path, processed_text]
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 if result.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
                     success = True

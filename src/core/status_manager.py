@@ -11,6 +11,7 @@ class StatusManager:
         self.mic_active = False
         self.camera_active = False
         self.internet_available = False
+        self.language = "en"  # Default language
         
         # Session data
         self.start_time = None

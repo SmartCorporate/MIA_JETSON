@@ -54,27 +54,43 @@ class Orchestrator:
         self.voice.speak(greeting)
         self.status.set_state("idle")
         
+    def _detect_language(self, text):
+        """Simple heuristic to detect Italian vs English."""
+        it_keywords = {"il", "lo", "la", "i", "gli", "le", "di", "a", "da", "in", "con", "su", "per", "tra", "fra", "ciao", "come", "perché", "quando", "chi", "cosa", "non", "sono", "sei", "è"}
+        words = set(text.lower().split())
+        it_count = len(words.intersection(it_keywords))
+        
+        # If at least 1-2 common Italian words are found, assume Italian
+        detected = "it" if it_count >= 1 else "en"
+        print(f"[Orchestrator] Detected language: {detected} (score: {it_count})")
+        return detected
+
     def process_interaction(self, user_text):
-        """Pipeline: Text -> Brain -> Response Gen -> Voice"""
+        """Pipeline: Text -> Language Detect -> Brain -> Response Gen -> Voice"""
         if not user_text:
             return
             
-        # 1. Processing State
-        self.status.set_state("processing")
-        print(f"[Orchestrator] Processing user input: {user_text}")
+        # 1. Detect Language
+        lang = self._detect_language(user_text)
+        self.status.language = lang
         
-        # 2. Generate response via local LLM
+        # 2. Processing State
+        self.status.set_state("processing")
+        print(f"[Orchestrator] Processing user input ({lang}): {user_text}")
+        
+        # 3. Generate response via local LLM
+        # We pass the detected language to the Brain if needed (LLM usually follows input language)
         raw_response = self.brain.generate_response(user_text)
         
-        # 3. Clean and format response
+        # 4. Clean and format response
         final_text = self.generator.format_response(raw_response)
         
-        # 4. Speaking State
+        # 5. Speaking State
         self.status.set_state("speaking")
-        print(f"[MIA Speaks]: {final_text}")
-        self.voice.speak(final_text)
+        print(f"[MIA Speaks] ({lang}): {final_text}")
+        self.voice.speak(final_text, lang=lang)
         
-        # 5. Return to idle
+        # 6. Return to idle
         self.status.set_state("idle")
 
     def run_forever(self):
