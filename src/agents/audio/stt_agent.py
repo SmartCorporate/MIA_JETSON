@@ -16,9 +16,24 @@ class STTAgent:
         self.models = {}  # Store models for different languages
         self.recognizers = {}
         self.current_lang = "en"
+        self.device_index = self._find_yeti_index()
         
         # Initialize Vosk
         self._initialize_vosk()
+
+    def _find_yeti_index(self):
+        """Automatically find the Yeti microphone index."""
+        try:
+            import sounddevice as sd
+            devices = sd.query_devices()
+            for i, d in enumerate(devices):
+                if "Yeti" in d['name'] and d['max_input_channels'] > 0:
+                    print(f"[STT] Found Yeti microphone at index {i}")
+                    return i
+            print("[STT Warning] Yeti microphone not found, using default input device.")
+        except Exception as e:
+            print(f"[STT Error] Failed to query audio devices: {e}")
+        return None  # None uses system default
 
     def _initialize_vosk(self):
         # Paths for the models we are downloading
@@ -63,6 +78,7 @@ class STTAgent:
         print(f"[STT] Listening ({self.current_lang})...")
         try:
             with sd.RawInputStream(samplerate=self.sample_rate, blocksize=8000, 
+                                   device=self.device_index,
                                    dtype='int16', channels=1, callback=self._audio_callback):
                 
                 # Clear the queue from any old audio
