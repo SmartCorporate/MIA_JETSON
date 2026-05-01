@@ -10,30 +10,36 @@ import json
 import sys
 
 class STTAgent:
-    def __init__(self, sample_rate=16000):
-        self.sample_rate = sample_rate
+    def __init__(self):
         self.audio_queue = queue.Queue()
         self.models = {}  # Store models for different languages
         self.recognizers = {}
         self.current_lang = "en"
-        self.device_index = self._find_yeti_index()
+        
+        # Auto-detect device and sample rate
+        self.device_index, self.sample_rate = self._get_device_info()
         
         # Initialize Vosk
         self._initialize_vosk()
 
-    def _find_yeti_index(self):
-        """Automatically find the Yeti microphone index."""
+    def _get_device_info(self):
+        """Find Yeti index and its native sample rate."""
         try:
             import sounddevice as sd
             devices = sd.query_devices()
             for i, d in enumerate(devices):
                 if "Yeti" in d['name'] and d['max_input_channels'] > 0:
-                    print(f"[STT] Found Yeti microphone at index {i}")
-                    return i
-            print("[STT Warning] Yeti microphone not found, using default input device.")
+                    rate = int(d['default_samplerate'])
+                    print(f"[STT] Found Yeti at index {i} with rate {rate}Hz")
+                    return i, rate
+            
+            # Fallback to system default
+            default_rate = int(sd.query_devices(kind='input')['default_samplerate'])
+            print(f"[STT Warning] Yeti not found. Using default input at {default_rate}Hz")
+            return None, default_rate
         except Exception as e:
             print(f"[STT Error] Failed to query audio devices: {e}")
-        return None  # None uses system default
+            return None, 16000
 
     def _initialize_vosk(self):
         # Paths for the models we are downloading
