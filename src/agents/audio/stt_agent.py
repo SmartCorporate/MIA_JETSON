@@ -40,38 +40,33 @@ class STTAgent:
             return 2, 44100
 
     def _initialize_vosk(self):
-        # Paths for the models we are downloading
-        model_paths = {
-            "en": "models/stt/vosk-model-small-en-us-0.15",
-            "it": "models/stt/vosk-model-small-it-0.22"
-        }
+        # Path for the Italian model
+        path = "models/stt/vosk-model-small-it-0.22"
         
-        for lang, path in model_paths.items():
-            if os.path.exists(path):
-                try:
-                    print(f"[STT] Loading Vosk {lang.upper()} model ({self.sample_rate}Hz) from {path}...")
-                    self.models[lang] = vosk.Model(path)
-                    self.recognizers[lang] = vosk.KaldiRecognizer(self.models[lang], self.sample_rate)
-                except Exception as e:
-                    print(f"[STT Error] Failed to load {lang} model: {e}")
-            else:
-                print(f"[STT Warning] {lang.upper()} model not found at {path}")
+        if os.path.exists(path):
+            try:
+                print(f"[STT] Loading Italian Vosk model ({self.sample_rate}Hz) from {path}...")
+                self.models["it"] = vosk.Model(path)
+                self.recognizers["it"] = vosk.KaldiRecognizer(self.models["it"], self.sample_rate)
+            except Exception as e:
+                print(f"[STT Error] Failed to load Italian model: {e}")
+        else:
+            print(f"[STT Warning] Italian model not found at {path}")
 
     def listen(self, timeout=10):
         """
-        Listens for a complete sentence using both EN and IT recognizers.
+        Listens for a complete sentence in Italian only.
         """
-        if not self.recognizers:
+        rec = self.recognizers.get("it")
+        if not rec:
             return None, None
 
-        print(f"[STT] Listening (Device: {self.device_index} @ {self.sample_rate}Hz)...")
+        print(f"[STT] Listening (ITALIAN ONLY)...")
         try:
-            # Use a larger blocksize to avoid overflow (16000 samples @ 44100Hz ~ 360ms)
             with sd.RawInputStream(samplerate=self.sample_rate, blocksize=16000, 
                                    device=self.device_index,
                                    dtype='int16', channels=1, callback=self._audio_callback):
                 
-                # Clear queue
                 while not self.audio_queue.empty(): 
                     try: self.audio_queue.get_nowait()
                     except queue.Empty: break
@@ -80,22 +75,14 @@ class STTAgent:
                 while time.time() - start_time < timeout:
                     try:
                         data = self.audio_queue.get(timeout=0.5)
-                        
-                        for lang, rec in self.recognizers.items():
-                            if rec.AcceptWaveform(data):
-                                result = json.loads(rec.Result())
-                                text = result.get("text", "").strip()
-                                if text:
-                                    print(f"[STT] Final Heard ({lang.upper()}): {text}")
-                                    for r in self.recognizers.values(): r.Reset()
-                                    return text, lang
-                            else:
-                                # We skip partial results in the main loop to save CPU
-                                pass
+                        if rec.AcceptWaveform(data):
+                            result = json.loads(rec.Result())
+                            text = result.get("text", "").strip()
+                            if text:
+                                print(f"[STT] Heard: {text}")
+                                rec.Reset()
+                                return text, "it"
                     except queue.Empty:
-                        continue
-                    except Exception as e:
-                        print(f"[STT Warning] Error in chunk processing: {e}")
                         continue
                 
                 return None, None

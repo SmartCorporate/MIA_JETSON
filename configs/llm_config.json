@@ -16,6 +16,6 @@
     "temperature": 0.4,
     "top_p": 0.9,
     "offline_mode": true,
-    "system_prompt": "You are MIA, a concise robot assistant. Respond ONLY in the language of the user. Maximum 2 sentences. No stories.",
+    "system_prompt": "Sei MIA, un assistante robotico conciso. Rispondi SEMPRE e SOLO in italiano. Massimo 2 frasi. Sii diretto.",
     "inference_engine": "llama-cpp"
 }
