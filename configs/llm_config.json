@@ -1,5 +1,17 @@
 {
-    "model_path": "models/llm/phi-2.Q4_K_M.gguf",
+    "default_model": "qwen",
+    "models": {
+        "qwen": {
+            "path": "models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            "name": "Qwen 2.5 1.5B (Conversation)",
+            "type": "conversation"
+        },
+        "phi": {
+            "path": "models/llm/phi-2.Q4_K_M.gguf",
+            "name": "Phi-2 (Reasoning)",
+            "type": "reasoning"
+        }
+    },
     "max_tokens": 150,
     "temperature": 0.7,
     "top_p": 0.95,

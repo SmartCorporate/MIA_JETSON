@@ -30,8 +30,8 @@ class Orchestrator:
         # Initial checks
         self.check_connectivity()
         
-        # Optional: Attempt to load model at start
-        # self.brain.load_model()
+        # Attempt to load models at start (Conversation & Reasoning)
+        self.brain.load_model()
         
     def check_connectivity(self):
         """Checks internet connectivity and updates status."""

@@ -9,12 +9,8 @@ import json
 class BrainLLM:
     def __init__(self, config_path="configs/llm_config.json"):
         self.config = self._load_config(config_path)
-        self.model = None
+        self.models = {}  # Store multiple model instances
         self.is_ready = False
-        
-        # We don't load the heavy model here to avoid crash at startup
-        # if the model file is missing or RAM is insufficient.
-        # Initialization happens on demand or via explicit call.
         
     def _load_config(self, path):
         try:
@@ -22,49 +18,73 @@ class BrainLLM:
                 return json.load(f)
         except Exception as e:
             print(f"[BrainLLM Warning] Could not load config: {e}")
-            return {
-                "offline_mode": True,
-                "temperature": 0.7,
-                "max_tokens": 100
-            }
+            return {"offline_mode": True}
 
-    def load_model(self):
+    def load_model(self, model_key=None):
         """
-        Attempts to load the local LLM model.
-        In a real scenario, this would initialize llama-cpp-python or similar.
+        Attempts to load models. If model_key is None, attempts to load all configured models.
         """
-        model_path = self.config.get("model_path")
-        if not model_path or not os.path.exists(model_path):
-            print(f"[BrainLLM] Model not found at {model_path}. Running in Fallback Mode.")
-            self.is_ready = False
-            return False
+        config_models = self.config.get("models", {})
+        keys_to_load = [model_key] if model_key else config_models.keys()
         
-        try:
-            print(f"[BrainLLM] Loading model from {model_path}...")
-            # Placeholder for actual LLM loading logic:
-            # from llama_cpp import Llama
-            # self.model = Llama(model_path=model_path, n_ctx=2048, n_threads=4)
-            self.is_ready = True
-            print("[BrainLLM] Model loaded successfully.")
-            return True
-        except Exception as e:
-            print(f"[BrainLLM Error] Failed to load model: {e}")
-            self.is_ready = False
-            return False
+        success_count = 0
+        for key in keys_to_load:
+            model_info = config_models.get(key)
+            if not model_info: continue
+            
+            model_path = model_info.get("path")
+            if not model_path or not os.path.exists(model_path):
+                print(f"[BrainLLM] Model {key} not found at {model_path}.")
+                continue
+            
+            try:
+                print(f"[BrainLLM] Loading {model_info['name']} from {model_path}...")
+                # Placeholder for llama-cpp-python initialization with GPU support
+                # from llama_cpp import Llama
+                # self.models[key] = Llama(
+                #     model_path=model_path, 
+                #     n_ctx=2048, 
+                #     n_gpu_layers=-1, # Use all GPU layers on Jetson
+                #     n_threads=4
+                # )
+                success_count += 1
+            except Exception as e:
+                print(f"[BrainLLM Error] Failed to load model {key}: {e}")
+        
+        self.is_ready = success_count > 0
+        return self.is_ready
+
+    def _select_model(self, text_input):
+        """
+        Decides which model to use based on the input text.
+        """
+        text = text_input.lower()
+        # Keywords that trigger the 'Reasoning' (Phi-2) model
+        reasoning_keywords = ["why", "how to", "solve", "calculate", "logic", "reason", "think", "compare", "explain", "code"]
+        
+        if any(kw in text for kw in reasoning_keywords):
+            return "phi" if "phi" in self.models or not self.is_ready else "qwen"
+        
+        return "qwen" if "qwen" in self.models or not self.is_ready else "phi"
 
     def generate_response(self, text_input):
         """
-        Processes the input and returns a response string.
+        Processes the input using the appropriate model.
         """
+        model_key = self._select_model(text_input)
+        
         if not self.is_ready:
             return self._fallback_response(text_input)
             
         try:
-            print(f"[BrainLLM] Processing input: {text_input}")
-            # Placeholder for inference:
-            # response = self.model(f"Q: {text_input}\nA:", max_tokens=self.config['max_tokens'])
-            # return response['choices'][0]['text'].strip()
-            return f"I understood your request about '{text_input}', but my local inference engine is still in simulation mode."
+            print(f"[BrainLLM] Using model: {model_key} for input: {text_input}")
+            # Placeholder for inference
+            # model = self.models.get(model_key)
+            # if model:
+            #     response = model(f"Q: {text_input}\nA:", max_tokens=self.config.get('max_tokens', 150))
+            #     return response['choices'][0]['text'].strip()
+            
+            return f"Simulated {model_key.upper()} response for: {text_input}"
         except Exception as e:
             print(f"[BrainLLM Error] Inference failed: {e}")
             return self._fallback_response(text_input)
