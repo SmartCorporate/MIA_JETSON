@@ -24,36 +24,12 @@ class STTAgent:
         self._initialize_vosk()
 
     def _get_device_info(self):
-        """Find Yeti index and its native sample rate with priority."""
-        try:
-            import sounddevice as sd
-            devices = sd.query_devices()
-            
-            # Priority 1: Check by exact HW name if available
-            for i, d in enumerate(devices):
-                if "hw:2,0" in d['name'] or ("Yeti" in d['name'] and d['max_input_channels'] > 0):
-                    rate = int(d['default_samplerate'])
-                    print(f"[STT] FORCED Yeti at index {i} with rate {rate}Hz")
-                    return i, rate
-            
-            # Priority 2: Fallback to index 2 if it looks like a microphone
-            try:
-                d2 = sd.query_devices(2)
-                if d2['max_input_channels'] > 0:
-                    rate = int(d2['default_samplerate'])
-                    print(f"[STT Warning] Yeti not found by name, forcing index 2 at {rate}Hz")
-                    return 2, rate
-            except:
-                pass
-            
-            # Priority 3: System default
-            default_info = sd.query_devices(kind='input')
-            default_rate = int(default_info['default_samplerate'])
-            print(f"[STT Warning] Using default input at {default_rate}Hz")
-            return None, default_rate
-        except Exception as e:
-            print(f"[STT Error] Failed to query audio devices: {e}")
-            return None, 16000
+        """Force the use of plughw to allow 16000Hz resampling by ALSA."""
+        # This device name is standard for ALSA when a USB mic is card 'Microphone'
+        device_name = "plughw:CARD=Microphone,DEV=0"
+        sample_rate = 16000
+        print(f"[STT] Using device: {device_name} @ {sample_rate}Hz (ALSA Resampling)")
+        return device_name, sample_rate
 
     def _initialize_vosk(self):
         # Paths for the models we are downloading

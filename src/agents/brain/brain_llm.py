@@ -79,18 +79,18 @@ class BrainLLM:
             print(f"[BrainLLM] Using model: {model_key} for input: {text_input} ({lang})")
             model = self.models.get(model_key)
             if model:
-                # Stronger instruction based on language
-                lang_instruction = "Rispondi in italiano." if lang == "it" else "Respond in English."
+                # Force language and directness
+                lang_instruction = "IMPORTANT: Respond ONLY in Italian." if lang == "it" else "IMPORTANT: Respond ONLY in English."
                 system_p = self.config.get('system_prompt', '')
                 
-                # ChatML-like structure often works better for these models
-                prompt = f"<|system|>\n{system_p} {lang_instruction}<|user|>\n{text_input}<|assistant|>\n"
+                # Enhanced ChatML for better adherence
+                prompt = f"<|system|>\n{system_p}\n{lang_instruction}\nRespond directly. No stories.\n<|user|>\n{text_input}\n<|assistant|>\n"
                 
                 response = model(
                     prompt, 
                     max_tokens=self.config.get('max_tokens', 50), 
-                    stop=["<|user|>", "<|system|>", "User:", "\n\n"],
-                    temperature=self.config.get('temperature', 0.4)
+                    stop=["<|user|>", "<|system|>", "User:", "\n\n", "User"],
+                    temperature=0.3 # Lower temperature for less 'nonsense'
                 )
                 return response['choices'][0]['text'].strip()
             
