@@ -7,10 +7,9 @@ import os
 import socket
 import time
 from dotenv import load_dotenv
-from audio import VoiceAgent, STTAgent
-from core.status_manager import StatusManager
-from brain.brain_llm import BrainLLM
-from brain.response_generator import ResponseGenerator
+from agents.audio import VoiceAgent, STTAgent
+from agents.brain import BrainLLM, ResponseGenerator
+from .status_manager import StatusManager
 
 class Orchestrator:
     def __init__(self):
@@ -100,13 +99,11 @@ class Orchestrator:
             while True:
                 # Only listen if we are idle
                 if self.status.current_state == "idle":
-                    # Potentially check for wake word here
-                    # For now, we simulate a polling mechanism
-                    # user_text = self.stt.listen()
-                    # if user_text:
-                    #     self.process_interaction(user_text)
-                    pass
+                    # Listen for user input (blocks until speech is heard or timeout)
+                    user_text = self.stt.listen(timeout=5)
+                    if user_text:
+                        self.process_interaction(user_text)
                 
-                time.sleep(0.5)
+                time.sleep(0.1)
         except KeyboardInterrupt:
             print("[Orchestrator] Shutting down...")
