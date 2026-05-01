@@ -78,17 +78,19 @@ class STTAgent:
         Returns (text, lang) or (None, None).
         """
         if not self.recognizers:
-            print("[STT Error] No recognizers available.")
+            print("[STT Error] No recognizers loaded. Models might be missing.")
             return None, None
 
-        print(f"[STT] Listening for EN/IT (Yeti Index: {self.device_index})...")
+        print(f"[STT] Listening (Yeti Index: {self.device_index} @ {self.sample_rate}Hz)...")
         try:
-            with sd.RawInputStream(samplerate=self.sample_rate, blocksize=4000, 
+            with sd.RawInputStream(samplerate=self.sample_rate, blocksize=8000, 
                                    device=self.device_index,
                                    dtype='int16', channels=1, callback=self._audio_callback):
                 
                 # Clear queue
-                while not self.audio_queue.empty(): self.audio_queue.get()
+                while not self.audio_queue.empty(): 
+                    try: self.audio_queue.get_nowait()
+                    except queue.Empty: break
 
                 start_time = time.time()
                 while time.time() - start_time < timeout:
@@ -101,21 +103,22 @@ class STTAgent:
                                 result = json.loads(rec.Result())
                                 text = result.get("text", "").strip()
                                 if text:
-                                    print(f"[STT] Heard ({lang}): {text}")
+                                    print(f"[STT] Heard ({lang.upper()}): {text}")
                                     # Reset all recognizers for next time
                                     for r in self.recognizers.values(): r.Reset()
                                     return text, lang
                     except queue.Empty:
                         continue
+                    except Exception as e:
+                        print(f"[STT Warning] Error processing audio chunk: {e}")
+                        continue
                 
-                # Final result check if timeout
-                for lang, rec in self.recognizers.items():
-                    result = json.loads(rec.FinalResult())
-                    text = result.get("text", "").strip()
-                    if text:
-                        return text, lang
+                # If timeout reached, return empty
+                return None, None
 
         except Exception as e:
-            print(f"[STT Error] {e}")
+            print(f"[STT Error] Could not open audio stream: {e}")
+            # If device index failed, try to re-detect for next time
+            self.device_index, _ = self._get_device_info()
         
         return None, None
