@@ -1,19 +1,31 @@
 [Unit]
 Description=MIA JETSON AI Assistant
-After=network.target audio.target
+After=network.target sound.target
+Wants=sound.target
 
 [Service]
-# Environment variables can be loaded from .env file by the application itself
-# or we could use EnvironmentFile= here. 
-# Using python-dotenv inside main.py handles it if WorkingDirectory is set.
 ExecStart=/usr/bin/python3 -u src/main.py
 WorkingDirectory=/home/mia/MIA_JETSON
 User=mia
 SupplementaryGroups=audio
+
+# --- Restart policy ---
 Restart=always
-RestartSec=10
-StandardOutput=append:/home/mia/MIA_JETSON/mia.log
-StandardError=append:/home/mia/MIA_JETSON/mia.log
+RestartSec=5
+StartLimitBurst=10
+StartLimitInterval=60s
+
+# --- Watchdog ---
+# If MIA stops responding for 2 minutes, systemd kills and restarts it
+WatchdogSec=120s
+
+# --- Logs ---
+StandardOutput=append:/home/mia/MIA_JETSON/logs/mia.log
+StandardError=append:/home/mia/MIA_JETSON/logs/mia.log
+
+# --- Environment ---
+# Give ALSA/PulseAudio time to settle after boot before starting
+ExecStartPre=/bin/sleep 5
 
 [Install]
 WantedBy=multi-user.target

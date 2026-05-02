@@ -1,17 +1,24 @@
 """
 MIA_JETSON - Brain LLM Module
-Processes text input using a local LLM (e.g., Llama.cpp) and returns a text response.
-This module is stateless and does not write to memory directly.
+Processes text input using local LLMs (llama.cpp) and returns a text response.
+- Primary model: Qwen 2.5 7B Instruct (conversation, Italian)
+- Reasoning model: Phi-3.5 Mini Instruct (lazy-loaded on demand)
+- Injects current date/time into every prompt
+- Optimized for NVIDIA Jetson GPU (n_gpu_layers=-1, f16_kv, low threads)
 """
 import os
 import json
+from datetime import datetime
 
 class BrainLLM:
     def __init__(self, config_path="configs/llm_config.json"):
         self.config = self._load_config(config_path)
-        self.models = {}  # Store multiple model instances
-        self.is_ready = False
-        
+        self.models = {}       # Loaded model instances
+        self.is_ready = False  # True once at least one model is loaded
+
+    # ------------------------------------------------------------------
+    # Config
+    # ------------------------------------------------------------------
     def _load_config(self, path):
         try:
             with open(path, 'r') as f:
@@ -20,101 +27,191 @@ class BrainLLM:
             print(f"[BrainLLM Warning] Could not load config: {e}")
             return {"offline_mode": True}
 
+    # ------------------------------------------------------------------
+    # Model loading
+    # ------------------------------------------------------------------
     def load_model(self, model_key=None):
         """
-        Attempts to load models. If model_key is None, attempts to load all configured models.
+        Load models from config.
+        If model_key is None, loads only the DEFAULT (primary) model.
+        The reasoning model is lazy-loaded the first time it is needed.
         """
         config_models = self.config.get("models", {})
-        keys_to_load = [model_key] if model_key else config_models.keys()
-        
-        success_count = 0
+        default_key = self.config.get("default_model", "qwen")
+
+        # At startup, only load the primary model to be fast
+        keys_to_load = [model_key] if model_key else [default_key]
+
         for key in keys_to_load:
+            if key in self.models:
+                continue  # Already loaded
             model_info = config_models.get(key)
-            if not model_info: continue
-            
-            model_path = model_info.get("path")
-            if not model_path or not os.path.exists(model_path):
-                print(f"[BrainLLM] Model {key} not found at {model_path}.")
+            if not model_info:
                 continue
-            
-            try:
-                print(f"[BrainLLM] Loading {model_info['name']} from {model_path}...")
-                from llama_cpp import Llama
-                self.models[key] = Llama(
-                    model_path=model_path, 
-                    n_ctx=2048, 
-                    n_gpu_layers=-1, # Use all GPU layers on Jetson
-                    n_threads=4
-                )
-                success_count += 1
-            except Exception as e:
-                print(f"[BrainLLM Error] Failed to load model {key}: {e}")
-        
-        self.is_ready = success_count > 0
+            self._load_single(key, model_info)
+
+        self.is_ready = len(self.models) > 0
         return self.is_ready
 
-    def _select_model(self, text_input):
+    def _load_single(self, key, model_info):
+        """Load one model and store it."""
+        model_path = model_info.get("path")
+        if not model_path or not os.path.exists(model_path):
+            print(f"[BrainLLM] Model '{key}' not found at '{model_path}'. Skipping.")
+            return False
+        try:
+            print(f"[BrainLLM] Loading '{model_info['name']}' from {model_path}...")
+            from llama_cpp import Llama
+            self.models[key] = Llama(
+                model_path=model_path,
+                n_ctx=model_info.get("n_ctx", 1024),
+                n_gpu_layers=model_info.get("n_gpu_layers", -1),  # All layers on GPU
+                n_threads=model_info.get("n_threads", 2),          # Low: GPU does the work
+                n_batch=model_info.get("n_batch", 256),            # GPU batch size
+                f16_kv=model_info.get("f16_kv", True),             # Save VRAM with fp16 KV
+                use_mmap=model_info.get("use_mmap", True),         # Fast load
+                verbose=model_info.get("verbose", False),          # No llama.cpp spam
+            )
+            print(f"[BrainLLM] '{model_info['name']}' loaded OK.")
+            return True
+        except Exception as e:
+            print(f"[BrainLLM Error] Failed to load '{key}': {e}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Model selection
+    # ------------------------------------------------------------------
+    def _select_model(self, text_input: str) -> str:
         """
-        Decides which model to use based on the input text.
+        Choose which model to use:
+        - Phi-3.5 Mini for heavy reasoning/math/code/logic
+        - Qwen 2.5 7B for everything else (including Italian conversation)
+        Lazy-loads the reasoning model on first use.
         """
         text = text_input.lower()
-        # Keywords that trigger the 'Reasoning' (Phi-2) model
-        reasoning_keywords = ["why", "how to", "solve", "calculate", "logic", "reason", "think", "compare", "explain", "code", "perché", "come"]
-        
-        if any(kw in text for kw in reasoning_keywords):
-            return "phi" if "phi" in self.models else "qwen"
-        
-        return "qwen" if "qwen" in self.models else "phi"
+        reasoning_keywords = [
+            "perché", "come funziona", "come si calcola", "calcola", "risolvi",
+            "spiega in dettaglio", "logica", "confronta", "codice", "programma",
+            "why", "how to", "solve", "calculate", "logic", "code", "compare",
+            "explain", "formula", "math", "matematica", "algoritmo"
+        ]
 
-    def generate_response(self, text_input, lang="en"):
-        """
-        Processes the input using the appropriate model.
-        """
-        model_key = self._select_model(text_input)
-        
+        if any(kw in text for kw in reasoning_keywords):
+            # Lazy-load reasoning model if not already loaded
+            if "phi" not in self.models:
+                config_models = self.config.get("models", {})
+                phi_info = config_models.get("phi")
+                if phi_info:
+                    print("[BrainLLM] Lazy-loading reasoning model (Phi-3.5 Mini)...")
+                    self._load_single("phi", phi_info)
+            if "phi" in self.models:
+                return "phi"
+
+        return "qwen" if "qwen" in self.models else next(iter(self.models), None)
+
+    # ------------------------------------------------------------------
+    # Inference
+    # ------------------------------------------------------------------
+    def _build_system_prompt(self, is_verbose: bool) -> str:
+        """Build system prompt enriched with real-time date/time."""
+        now = datetime.now()
+        date_str = now.strftime("%A %d %B %Y")   # e.g. "Venerdì 02 Maggio 2025"
+        time_str = now.strftime("%H:%M")          # e.g. "14:35"
+
+        # Italian day/month names
+        it_days = {
+            "Monday": "Lunedì", "Tuesday": "Martedì", "Wednesday": "Mercoledì",
+            "Thursday": "Giovedì", "Friday": "Venerdì", "Saturday": "Sabato", "Sunday": "Domenica"
+        }
+        it_months = {
+            "January": "Gennaio", "February": "Febbraio", "March": "Marzo",
+            "April": "Aprile", "May": "Maggio", "June": "Giugno",
+            "July": "Luglio", "August": "Agosto", "September": "Settembre",
+            "October": "Ottobre", "November": "Novembre", "December": "Dicembre"
+        }
+        for en, it in {**it_days, **it_months}.items():
+            date_str = date_str.replace(en, it)
+
+        base = self.config.get("verbose_system_prompt" if is_verbose else "system_prompt",
+                               "Sei MIA, l'assistente vocale di IMPERIUM. Rispondi in italiano.")
+        return (
+            f"{base}\n"
+            f"Data odierna: {date_str}. Ora corrente: {time_str}.\n"
+            f"Quando ti chiedono la data o l'ora, rispondi con queste informazioni esatte."
+        )
+
+    def generate_response(self, text_input: str, lang: str = "it") -> str:
+        """Main inference pipeline."""
         if not self.is_ready:
             return self._fallback_response(text_input)
-            
+
+        model_key = self._select_model(text_input)
+        model = self.models.get(model_key)
+        if not model:
+            return self._fallback_response(text_input)
+
         try:
-            print(f"[BrainLLM] Using model: {model_key} for input: {text_input} ({lang})")
-            model = self.models.get(model_key)
-            if model:
-                # Dynamic verbosity check
-                text_lower = text_input.lower()
-                verbose_keywords = ["spiegamelo meglio", "spiega meglio", "approfondisci", "spiegami", "dimmi di più", "più dettagli"]
-                is_verbose = any(kw in text_lower for kw in verbose_keywords)
-                
-                max_t = 100 if is_verbose else 30
-                brevity_instr = "Puoi usare fino a 100 parole." if is_verbose else "Rispondi in MASSIMO 10 PAROLE."
-                
-                # Force language and directness
-                lang_instruction = "IMPORTANT: Respond ONLY in Italian." if lang == "it" else "IMPORTANT: Respond ONLY in English."
-                system_p = self.config.get('system_prompt', 'Sei MIA, un robot conciso.')
-                
-                # Enhanced ChatML for better adherence
-                prompt = f"<|system|>\n{system_p}\n{lang_instruction}\n{brevity_instr}\nRespond directly. No stories.\n<|user|>\n{text_input}\n<|assistant|>\n"
-                
-                response = model(
-                    prompt, 
-                    max_tokens=max_t, 
-                    stop=["<|user|>", "<|system|>", "User:", "\n\n", "User"],
-                    temperature=0.3
-                )
-                return response['choices'][0]['text'].strip()
-            
-            return f"Error: Model {model_key} not found."
+            text_lower = text_input.lower()
+            verbose_kw = [
+                "spiegamelo meglio", "spiega meglio", "approfondisci",
+                "spiegami", "dimmi di più", "più dettagli", "come funziona",
+                "in dettaglio", "voglio sapere"
+            ]
+            is_verbose = any(kw in text_lower for kw in verbose_kw)
+
+            max_t  = self.config.get("max_tokens", 60)
+            max_t  = max_t * 3 if is_verbose else max_t
+
+            system_p = self._build_system_prompt(is_verbose)
+
+            print(f"[BrainLLM] model={model_key}, verbose={is_verbose}, max_tokens={max_t}")
+
+            prompt = (
+                f"<|system|>\n{system_p}\n"
+                f"<|user|>\n{text_input}\n"
+                f"<|assistant|>\n"
+            )
+
+            response = model(
+                prompt,
+                max_tokens=max_t,
+                stop=["<|user|>", "<|system|>", "User:", "\n\n", "User"],
+                temperature=self.config.get("temperature", 0.35),
+                top_p=self.config.get("top_p", 0.9),
+                top_k=self.config.get("top_k", 40),
+                repeat_penalty=self.config.get("repeat_penalty", 1.1),
+            )
+            return response['choices'][0]['text'].strip()
+
         except Exception as e:
             print(f"[BrainLLM Error] Inference failed: {e}")
             return self._fallback_response(text_input)
 
-    def _fallback_response(self, text_input):
-        """Rule-based fallback when LLM is unavailable."""
-        text_input = text_input.lower()
-        if "hello" in text_input or "hi" in text_input:
-            return "Hello! I am MIA. I am currently running in offline fallback mode."
-        if "status" in text_input:
-            return "My systems are operational, but my large language model is not loaded."
-        if "who are you" in text_input:
-            return "I am MIA, your AI assistant running on NVIDIA Jetson."
-            
-        return "I heard you, but I cannot process complex requests without my local brain model."
+    # ------------------------------------------------------------------
+    # Fallback (no LLM available)
+    # ------------------------------------------------------------------
+    def _fallback_response(self, text_input: str) -> str:
+        """Rule-based Italian fallback when LLM is unavailable."""
+        t = text_input.lower()
+        now = datetime.now()
+
+        # Date/time — always available even without LLM
+        if any(w in t for w in ["ora", "che ore", "orario"]):
+            return f"Sono le {now.strftime('%H:%M')}."
+        if any(w in t for w in ["giorno", "data", "oggi", "che giorno"]):
+            it_days = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+            it_months = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
+                         "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
+            day_name = it_days[now.weekday()]
+            month_name = it_months[now.month - 1]
+            return f"Oggi è {day_name} {now.day} {month_name} {now.year}."
+
+        # Basic greetings
+        if any(w in t for w in ["ciao", "salve", "hello", "hi"]):
+            return "Ciao! Sono MIA. Il modello linguistico non è ancora caricato."
+        if any(w in t for w in ["status", "come stai", "funzioni"]):
+            return "I miei sistemi operativi. Il modello LLM è in caricamento."
+        if any(w in t for w in ["chi sei", "who are you", "presentati"]):
+            return "Sono MIA, la tua assistente vocale su NVIDIA Jetson."
+
+        return "Ti sento. Sto ancora caricando il modello linguistico, attendi."

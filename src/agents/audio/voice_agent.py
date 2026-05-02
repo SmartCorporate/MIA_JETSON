@@ -12,14 +12,29 @@ import shutil
 
 class VoiceAgent:
     def __init__(self):
-        # Carica configurazione
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'configs', 'config_voice.json')
+        # Load voice config
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'configs', 'config_voice.json'
+        )
         try:
             with open(config_path, 'r') as f:
                 self.config = json.load(f)
         except Exception:
             self.config = {"tts_engine": "elevenlabs", "voice_id": "Rachel", "fallback_tts": "pyttsx3"}
-            
+
+        # Load audio config (for output device name)
+        audio_config_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            'configs', 'config_audio.json'
+        )
+        try:
+            with open(audio_config_path, 'r') as f:
+                audio_cfg = json.load(f)
+            self.output_device_name = audio_cfg.get("output_device_name", "USB Audio")
+        except Exception:
+            self.output_device_name = "USB Audio"
+
         # ElevenLabs Client
         api_key = os.getenv('ELEVENLABS_API_KEY')
         self.elevenlabs_client = None
@@ -32,44 +47,63 @@ class VoiceAgent:
                 print(f"[Audio Error] Failed to init ElevenLabs: {e}")
         else:
             print("[Audio Warning] ELEVENLABS_API_KEY not set")
-        
-        # Voce default ElevenLabs
+
+        # Voice settings
         self.voice_id = self.config.get("voice_id", "Rachel")
-        
-        # Speaking rate (1.0 = normal, <1.0 = slower, >1.0 = faster)
         self.speaking_rate = self.config.get("speaking_rate", 0.85)
-        
-        # Detect the correct ALSA output device
+
+        # Detect ALSA output device pinned by name
         self.alsa_device = self._detect_alsa_device()
-        print(f"[Audio] Using ALSA device: {self.alsa_device}")
-        
+        print(f"[Audio] Using ALSA output device: {self.alsa_device}")
+
         # Check available tools
-        self.has_ffmpeg = shutil.which("ffmpeg") is not None
-        self.has_aplay = shutil.which("aplay") is not None
-        self.has_mpv = shutil.which("mpv") is not None
-        self.has_espeak = shutil.which("espeak") is not None
+        self.has_ffmpeg    = shutil.which("ffmpeg") is not None
+        self.has_aplay     = shutil.which("aplay") is not None
+        self.has_mpv       = shutil.which("mpv") is not None
+        self.has_espeak    = shutil.which("espeak") is not None
         self.has_pico2wave = shutil.which("pico2wave") is not None
-        
-        print(f"[Audio] Tools: aplay={self.has_aplay}, ffmpeg={self.has_ffmpeg}, mpv={self.has_mpv}, espeak={self.has_espeak}, pico={self.has_pico2wave}")
+
+        print(f"[Audio] Tools: aplay={self.has_aplay}, ffmpeg={self.has_ffmpeg}, "
+              f"mpv={self.has_mpv}, espeak={self.has_espeak}, pico={self.has_pico2wave}")
 
     def _detect_alsa_device(self):
-        """Auto-detect the correct ALSA playback device by checking aplay -l"""
+        """
+        Detect ALSA output device pinned by name from config.
+        Searches aplay -l for the configured output_device_name.
+        Falls back to first USB audio device found, then plughw:0,0.
+        """
         try:
             result = subprocess.run(
                 ["aplay", "-l"],
                 capture_output=True, text=True, timeout=5
             )
             lines = result.stdout.strip().split('\n')
+            target = self.output_device_name.lower()
+
+            # Pass 1: match by configured name
+            for line in lines:
+                if target in line.lower() and 'card' in line.lower():
+                    try:
+                        card_num = line.split('card')[1].strip().split(':')[0].strip()
+                        device = f"plughw:{card_num},0"
+                        print(f"[Audio] Output device '{self.output_device_name}' → {device}")
+                        return device
+                    except (IndexError, ValueError):
+                        pass
+
+            # Pass 2: any USB audio device
             for line in lines:
                 lower = line.lower()
-                # Look for USB audio device
-                if 'usb' in lower or 'speaker' in lower:
-                    if 'card' in lower:
-                        try:
-                            card_num = line.split('card')[1].strip().split(':')[0].strip()
-                            return f"plughw:{card_num},0"
-                        except (IndexError, ValueError):
-                            pass
+                if ('usb' in lower or 'speaker' in lower) and 'card' in lower:
+                    try:
+                        card_num = line.split('card')[1].strip().split(':')[0].strip()
+                        device = f"plughw:{card_num},0"
+                        print(f"[Audio] USB fallback device → {device}")
+                        return device
+                    except (IndexError, ValueError):
+                        pass
+
+            print("[Audio Warning] No USB audio output found, using plughw:0,0")
             return "plughw:0,0"
         except Exception as e:
             print(f"[Audio Warning] Could not detect ALSA device: {e}")
@@ -124,31 +158,40 @@ class VoiceAgent:
                     print("[Audio Warning] ffmpeg not available, trying mpv...")
                     return self._play_with_mpv(filepath)
             
-            # Play WAV with aplay
+            # Play WAV with aplay (up to 3 attempts for busy device)
             cmd = ["aplay", "-D", self.alsa_device, play_path]
             print(f"[Audio] Playing: {' '.join(cmd)}")
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                # Clean up converted WAV if we made one
-                if play_path != filepath:
-                    try:
-                        os.unlink(play_path)
-                    except Exception:
-                        pass
-                        
-                if result.returncode == 0:
-                    return True
-                else:
-                    print(f"[Audio Warning] aplay failed (code {result.returncode}): {result.stderr[:300]}")
-                    # Try without explicit device
-                    cmd2 = ["aplay", play_path]
-                    result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
-                    if result2.returncode == 0:
+            for attempt in range(3):
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    # Clean up converted WAV if we made one
+                    if play_path != filepath and os.path.exists(play_path):
+                        try:
+                            os.unlink(play_path)
+                        except Exception:
+                            pass
+
+                    if result.returncode == 0:
                         return True
-            except subprocess.TimeoutExpired:
-                print("[Audio Warning] aplay timed out")
-            except Exception as e:
-                print(f"[Audio Error] aplay error: {e}")
+                    else:
+                        err = result.stderr[:200]
+                        print(f"[Audio Warning] aplay attempt {attempt+1} failed (code {result.returncode}): {err}")
+                        if "Device or resource busy" in err:
+                            import time as _time
+                            _time.sleep(1)
+                            continue
+                        # Try without explicit device as last resort
+                        cmd2 = ["aplay", play_path]
+                        result2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=60)
+                        if result2.returncode == 0:
+                            return True
+                        break
+                except subprocess.TimeoutExpired:
+                    print("[Audio Warning] aplay timed out")
+                    break
+                except Exception as e:
+                    print(f"[Audio Error] aplay error: {e}")
+                    break
         
         # STRATEGY 2: mpv fallback
         return self._play_with_mpv(filepath)

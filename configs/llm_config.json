@@ -2,20 +2,37 @@
     "default_model": "qwen",
     "models": {
         "qwen": {
-            "path": "models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            "name": "Qwen 2.5 1.5B (Conversation)",
-            "type": "conversation"
+            "path": "models/llm/qwen2.5-7b-instruct-q4_k_m.gguf",
+            "name": "Qwen 2.5 7B Instruct (Conversazione)",
+            "type": "conversation",
+            "n_ctx": 1024,
+            "n_gpu_layers": -1,
+            "n_threads": 2,
+            "n_batch": 256,
+            "f16_kv": true,
+            "use_mmap": true,
+            "verbose": false
         },
         "phi": {
-            "path": "models/llm/phi-2.Q4_K_M.gguf",
-            "name": "Phi-2 (Reasoning)",
-            "type": "reasoning"
+            "path": "models/llm/phi-3.5-mini-instruct-q4_k_m.gguf",
+            "name": "Phi-3.5 Mini Instruct (Ragionamento)",
+            "type": "reasoning",
+            "n_ctx": 1024,
+            "n_gpu_layers": -1,
+            "n_threads": 2,
+            "n_batch": 256,
+            "f16_kv": true,
+            "use_mmap": true,
+            "verbose": false
         }
     },
-    "max_tokens": 30,
-    "temperature": 0.3,
+    "max_tokens": 60,
+    "temperature": 0.35,
     "top_p": 0.9,
+    "top_k": 40,
+    "repeat_penalty": 1.1,
     "offline_mode": true,
-    "system_prompt": "Sei MIA, un robot conciso. Rispondi in MASSIMO 10 PAROLE. Sii brevissimo.",
+    "system_prompt": "Sei MIA, l'assistente vocale robotica di IMPERIUM. Sei precisa, intelligente e concisa. Rispondi SEMPRE in italiano. Rispondi in massimo 15 parole a meno che non venga chiesto di approfondire. Sii diretta, utile e naturale.",
+    "verbose_system_prompt": "Sei MIA, l'assistente vocale robotica di IMPERIUM. Sei precisa, intelligente e concisa. Rispondi SEMPRE in italiano. Puoi usare fino a 80 parole. Sii dettagliata, utile e naturale.",
     "inference_engine": "llama-cpp"
 }

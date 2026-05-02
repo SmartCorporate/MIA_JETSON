@@ -1,104 +1,151 @@
 """
 MIA_JETSON - Central Orchestrator
-Coordinates modules and manages global system flow and state.
-As per architecture, this module contains NO AI logic.
+Coordinates modules and manages global system flow.
+KEY OPTIMIZATION: Greeting fires IMMEDIATELY at boot,
+then LLM loads in a background thread (masked loading).
 """
 import os
 import socket
 import time
+import threading
 from dotenv import load_dotenv
 from agents.audio import VoiceAgent, STTAgent
 from agents.brain import BrainLLM, ResponseGenerator
 from .status_manager import StatusManager
 
+
 class Orchestrator:
     def __init__(self):
-        # Load environment variables (from project root)
-        env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
+        # Load environment variables
+        env_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'
+        )
         load_dotenv(env_path)
-        
-        print("[Orchestrator] Initializing system...")
+
+        print("[Orchestrator] Inizializzazione MIA...")
         self.status = StatusManager()
-        
-        # Initialize core agents
+        self._llm_ready = threading.Event()  # Signals when LLM is loaded
+
+        # 1. Init lightweight agents first (fast: <1s each)
         self.voice = VoiceAgent()
-        self.stt = STTAgent()
+        self.stt   = STTAgent()
         self.brain = BrainLLM()
         self.generator = ResponseGenerator()
-        
-        # Initial checks
+
+        # 2. Check connectivity (fast)
         self.check_connectivity()
-        
-        # Attempt to load models at start (Conversation & Reasoning)
-        self.brain.load_model()
-        
+
+    # ------------------------------------------------------------------
+    # Connectivity
+    # ------------------------------------------------------------------
     def check_connectivity(self):
         """Checks internet connectivity and updates status."""
         try:
-            # Check Google DNS
             socket.create_connection(("8.8.8.8", 53), timeout=2)
             self.status.update_connectivity(True)
         except (OSError, socket.timeout):
             self.status.update_connectivity(False)
-            
+
+    # ------------------------------------------------------------------
+    # Startup — MASKED LOADING
+    # ------------------------------------------------------------------
     def startup(self):
-        """System startup sequence."""
-        online_text = "ONLINE" if self.status.is_online else "OFFLINE"
-        
-        # Optimal syntax for clarity at power-on
-        greeting = f"Hello. I am Mia. System {online_text}."
-        
-        print(f"[Orchestrator] Greeting: {greeting}")
+        """
+        Fast startup sequence:
+        1. Say welcome greeting IMMEDIATELY
+        2. Load LLM in background thread (user doesn't wait)
+        3. Notify with a short sound/message when brain is ready
+        """
+        # Step 1: Greet immediately (before LLM loads)
+        online_text = "online" if self.status.is_online else "offline"
+        greeting = f"Ciao, sono MIA. Sistema {online_text}. Sto attivando il cervello."
+        print(f"[Orchestrator] Saluto immediato: {greeting}")
         self.status.set_state("speaking")
-        self.voice.speak(greeting)
-        self.status.set_state("idle")
-        
-    def _detect_language(self, text):
-        """Simple heuristic to detect Italian vs English."""
-        it_keywords = {"il", "lo", "la", "i", "gli", "le", "di", "a", "da", "in", "con", "su", "per", "tra", "fra", "ciao", "come", "perché", "quando", "chi", "cosa", "non", "sono", "sei", "è"}
-        words = set(text.lower().split())
-        it_count = len(words.intersection(it_keywords))
-    def process_interaction(self, user_text, lang="en"):
-        """Pipeline: Text -> Brain -> Response Gen -> Voice"""
+        self.voice.speak(greeting, lang="it")
+        self.status.set_state("loading")
+
+        # Step 2: Start background LLM loading thread
+        load_thread = threading.Thread(
+            target=self._background_load_llm,
+            name="LLM-Loader",
+            daemon=True
+        )
+        load_thread.start()
+        print("[Orchestrator] Caricamento LLM in background avviato...")
+
+    def _background_load_llm(self):
+        """Loads the primary LLM in background; signals when done."""
+        try:
+            print("[Orchestrator] [Thread] Caricamento modello LLM...")
+            success = self.brain.load_model()  # Loads only primary (qwen)
+            self._llm_ready.set()
+
+            if success:
+                print("[Orchestrator] [Thread] LLM caricato OK. MIA è pronta.")
+                self.status.set_state("idle")
+                self.voice.speak("Pronta.", lang="it")
+            else:
+                print("[Orchestrator] [Thread] LLM non trovato. Modalità fallback.")
+                self.status.set_state("idle")
+                self.voice.speak("Modalità ridotta attiva.", lang="it")
+        except Exception as e:
+            print(f"[Orchestrator] [Thread] Errore caricamento LLM: {e}")
+            self._llm_ready.set()
+            self.status.set_state("idle")
+
+    # ------------------------------------------------------------------
+    # Interaction pipeline
+    # ------------------------------------------------------------------
+    def process_interaction(self, user_text: str, lang: str = "it"):
+        """Pipeline: Text → Brain → ResponseGen → Voice"""
         if not user_text:
             return
-            
-        # Update language from STT detection
+
         self.status.language = lang
-        
-        # 1. Processing State
         self.status.set_state("processing")
-        print(f"[Orchestrator] Processing user input ({lang}): {user_text}")
-        
-        # 2. Generate response via local LLM
+        print(f"[Orchestrator] Input ({lang}): {user_text}")
+
+        # Generate response
         raw_response = self.brain.generate_response(user_text, lang=lang)
-        
-        # 3. Clean and format response
+
+        # Format
         final_text = self.generator.format_response(raw_response)
-        
-        # 4. Speaking State
+
+        # Speak
         self.status.set_state("speaking")
-        print(f"[MIA Speaks] ({lang}): {final_text}")
+        print(f"[MIA] ({lang}): {final_text}")
         self.voice.speak(final_text, lang=lang)
-        
-        # 5. Return to idle
+
+        # Back to idle
         self.status.set_state("idle")
 
+    # ------------------------------------------------------------------
+    # Main loop
+    # ------------------------------------------------------------------
     def run_forever(self):
-        """Main loop managed by orchestrator."""
-        print("[Orchestrator] MIA is ready and listening...")
+        """Main listen-respond loop. Waits until LLM is at least attempting to load."""
+        print("[Orchestrator] MIA in ascolto...")
         try:
             while True:
-                # Only listen if we are idle
-                if self.status.current_state == "idle":
-                    # Listen for user input (blocks until speech is heard or timeout)
+                current = self.status.current_state
+
+                if current == "idle":
+                    # Listen (blocks for up to 5s)
                     user_text, detected_lang = self.stt.listen(timeout=5)
                     if user_text:
-                        self.process_interaction(user_text, lang=detected_lang)
-                        # After speaking, wait a moment and clear any buffered audio (echo/noise)
-                        time.sleep(1.0)
+                        # If LLM is still loading, still process (fallback will handle it)
+                        self.process_interaction(user_text, lang=detected_lang or "it")
+                        time.sleep(0.8)
                         self.stt.flush_queue()
-                
+
+                elif current == "loading":
+                    # Still loading LLM — listen anyway (fallback will respond)
+                    user_text, detected_lang = self.stt.listen(timeout=5)
+                    if user_text:
+                        self.process_interaction(user_text, lang=detected_lang or "it")
+                        self.stt.flush_queue()
+
                 time.sleep(0.1)
+
         except KeyboardInterrupt:
-            print("[Orchestrator] Shutting down...")
+            print("[Orchestrator] Spegnimento MIA...")

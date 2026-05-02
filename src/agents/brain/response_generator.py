@@ -1,53 +1,54 @@
 """
 MIA_JETSON - Response Generator
-Formats, cleans, and applies personality to the LLM output before it is spoken.
+Formats, cleans, and applies personality to LLM output before it is spoken.
+All user-facing error messages are in Italian.
 """
 import re
 
+
 class ResponseGenerator:
     def __init__(self):
-        self.personality_prefix = ""
-        self.max_chars = 300 # Prevent too long spoken responses
-        
-    def format_response(self, raw_text):
-        """
-        Cleans and formats the raw text from BrainLLM.
-        """
+        self.max_chars = 400  # Max spoken characters
+
+    def format_response(self, raw_text: str) -> str:
+        """Clean and format raw LLM output for TTS."""
         if not raw_text:
-            return "I'm sorry, I couldn't generate a response."
-            
-        # 1. Clean whitespace
-        clean_text = raw_text.strip()
-        
-        # 2. Remove potential LLM "artifacts" (like "A:", "User:", or ChatML tags)
+            return "Non sono riuscita a generare una risposta."
+
+        clean = raw_text.strip()
+
+        # Remove LLM artifacts (ChatML tags, prefixes, trailing hallucinations)
         artifacts = [
-            r'^(A:|Response:|MIA:|Assistant:)\s*',
-            r'<\|.*?\|>', # Remove ChatML tags like <|user|>, <|system|>, etc.
-            r'User:.*',    # Remove any trailing "User: ..." hallucinations
-            r'Assistant:.*'
+            r'^(A:|R:|MIA:|Risposta:|Response:|Assistant:)\s*',
+            r'<\|.*?\|>',        # ChatML tags
+            r'User:.*',          # Trailing "User: ..." hallucinations
+            r'Assistant:.*',
+            r'\[.*?\]',          # Remove [stuff] annotations sometimes generated
         ]
         for pattern in artifacts:
-            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE | re.MULTILINE).strip()
-        
-        # 3. Shorten if too long (TTS should be concise)
-        if len(clean_text) > self.max_chars:
-            # Try to cut at the last sentence
-            truncated = clean_text[:self.max_chars]
-            last_period = truncated.rfind('.')
-            if last_period > self.max_chars // 2:
-                clean_text = truncated[:last_period+1]
-            else:
-                clean_text = truncated + "..."
-        
-        # 4. Apply basic personality / safety checks
-        # (Example: replace rude words or add a signature)
-        
-        return clean_text
+            clean = re.sub(pattern, '', clean, flags=re.IGNORECASE | re.MULTILINE).strip()
 
-    def prepare_for_speech(self, text):
-        """
-        Final pass to make text sound better (e.g., expanding abbreviations).
-        """
-        # Expand "MIA" to "Mia" for better phonetic pronunciation
-        # (Though we already do this in VoiceAgent, it doesn't hurt here)
+        # Collapse excessive whitespace
+        clean = re.sub(r'\n{2,}', ' ', clean)
+        clean = re.sub(r'\s{2,}', ' ', clean).strip()
+
+        # Truncate if too long, breaking at sentence boundary
+        if len(clean) > self.max_chars:
+            truncated = clean[:self.max_chars]
+            last_period = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
+            if last_period > self.max_chars // 2:
+                clean = truncated[:last_period + 1]
+            else:
+                clean = truncated + "..."
+
+        # Final safety: if empty after cleaning
+        if not clean:
+            return "Non ho capito. Puoi ripetere?"
+
+        return clean
+
+    def prepare_for_speech(self, text: str) -> str:
+        """Final phonetic adjustments for TTS engines."""
+        # 'MIA' → 'Mia' for correct Italian pronunciation
+        text = re.sub(r'\bMIA\b', 'Mia', text)
         return text
