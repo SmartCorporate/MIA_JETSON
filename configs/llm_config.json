@@ -1,38 +1,28 @@
 {
-    "default_model": "qwen",
+    "default_model": "qwen_fast",
     "models": {
-        "qwen": {
-            "path": "models/llm/qwen2.5-7b-instruct-q4_k_m.gguf",
-            "name": "Qwen 2.5 7B Instruct (Conversazione)",
-            "type": "conversation",
+        "qwen_fast": {
+            "path": "models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            "name": "Qwen 1.5B (Fast)",
             "n_ctx": 1024,
             "n_gpu_layers": -1,
-            "n_threads": 2,
-            "n_batch": 256,
-            "f16_kv": true,
-            "use_mmap": true,
-            "verbose": false
+            "n_threads": 4
+        },
+        "qwen_smart": {
+            "path": "models/llm/QWEN_7B_SMART.gguf",
+            "name": "Qwen 7B (Smart)",
+            "n_ctx": 1024,
+            "n_gpu_layers": -1,
+            "n_threads": 4
         },
         "phi": {
             "path": "models/llm/phi-3.5-mini-instruct-q4_k_m.gguf",
-            "name": "Phi-3.5 Mini Instruct (Ragionamento)",
-            "type": "reasoning",
-            "n_ctx": 1024,
+            "name": "Phi-3.5 Mini",
+            "n_ctx": 2048,
             "n_gpu_layers": -1,
-            "n_threads": 2,
-            "n_batch": 256,
-            "f16_kv": true,
-            "use_mmap": true,
-            "verbose": false
+            "n_threads": 4
         }
     },
-    "max_tokens": 60,
-    "temperature": 0.35,
-    "top_p": 0.9,
-    "top_k": 40,
-    "repeat_penalty": 1.1,
     "offline_mode": true,
-    "system_prompt": "Sei MIA, l'assistente vocale robotica di IMPERIUM. Sei precisa, intelligente e concisa. Rispondi SEMPRE in italiano. Rispondi in massimo 15 parole a meno che non venga chiesto di approfondire. Sii diretta, utile e naturale.",
-    "verbose_system_prompt": "Sei MIA, l'assistente vocale robotica di IMPERIUM. Sei precisa, intelligente e concisa. Rispondi SEMPRE in italiano. Puoi usare fino a 80 parole. Sii dettagliata, utile e naturale.",
     "inference_engine": "llama-cpp"
 }

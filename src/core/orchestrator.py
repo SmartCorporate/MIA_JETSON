@@ -58,7 +58,7 @@ class Orchestrator:
         """
         # Step 1: Greet immediately (before LLM loads)
         online_text = "online" if self.status.is_online else "offline"
-        greeting = f"Ciao, sono MIA. Sistema {online_text}. Sto attivando il cervello."
+        greeting = "Ciao, sono MIA. Mi sto attivando."
         print(f"[Orchestrator] Saluto immediato: {greeting}")
         self.status.set_state("speaking")
         self.voice.speak(greeting, lang="it")
@@ -77,17 +77,22 @@ class Orchestrator:
         """Loads the primary LLM in background; signals when done."""
         try:
             print("[Orchestrator] [Thread] Caricamento modello LLM...")
-            success = self.brain.load_model()  # Loads only primary (qwen)
+            success = self.brain.load_model()
+            
+            # KEY FIX: Wait a moment for system to stabilize after VRAM allocation
+            time.sleep(1.5)
             self._llm_ready.set()
 
             if success:
                 print("[Orchestrator] [Thread] LLM caricato OK. MIA è pronta.")
                 self.status.set_state("idle")
-                self.voice.speak("Pronta.", lang="it")
+                # Ora che il cervello è caricato E stabilizzato, diciamo Pronta
+                self.voice.speak("Sono pronta.", lang="it")
             else:
-                print("[Orchestrator] [Thread] LLM non trovato. Modalità fallback.")
+                print("[Orchestrator] [Thread] LLM non caricato. Modalità fallback.")
                 self.status.set_state("idle")
-                self.voice.speak("Modalità ridotta attiva.", lang="it")
+                # MIA è pronta anche se in fallback, non serve dirlo all'utente
+                pass
         except Exception as e:
             print(f"[Orchestrator] [Thread] Errore caricamento LLM: {e}")
             self._llm_ready.set()

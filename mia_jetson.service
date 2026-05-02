@@ -15,10 +15,6 @@ RestartSec=5
 StartLimitBurst=10
 StartLimitInterval=60s
 
-# --- Watchdog ---
-# If MIA stops responding for 2 minutes, systemd kills and restarts it
-WatchdogSec=120s
-
 # --- Logs ---
 StandardOutput=append:/home/mia/MIA_JETSON/logs/mia.log
 StandardError=append:/home/mia/MIA_JETSON/logs/mia.log

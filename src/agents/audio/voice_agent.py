@@ -49,8 +49,12 @@ class VoiceAgent:
             print("[Audio Warning] ELEVENLABS_API_KEY not set")
 
         # Voice settings
+        from core.config_loader import load_general_config
+        gen_cfg = load_general_config()
+        speed_scale = gen_cfg.get("VELOCITA_VOCE", 3)
+        # Map 1-5 to 0.7-1.3 rate
+        self.speaking_rate = 0.7 + (speed_scale - 1) * 0.15
         self.voice_id = self.config.get("voice_id", "Rachel")
-        self.speaking_rate = self.config.get("speaking_rate", 0.85)
 
         # Detect ALSA output device pinned by name
         self.alsa_device = self._detect_alsa_device()
@@ -283,13 +287,13 @@ class VoiceAgent:
         # Fallback Offline
         self._speak_offline(text, lang=lang)
         
-    def _speak_offline(self, text, lang="en"):
-        """Offline TTS fallback prioritizing pico2wave (much better quality)"""
+    def _speak_offline(self, text, lang="it"):
+        """Offline TTS fallback forcing Italian for consistency."""
         try:
             import re
             # Pre-process text for better offline pronunciation
-            # Replace 'MIA' with 'Mee-uh' (phonetic spelling to avoid 'Maia')
-            processed_text = re.sub(r'\bmia\b', 'Mee-uh', text, flags=re.IGNORECASE)
+            # Replace 'MIA' with 'Meea' for better phonetic result in Italian
+            processed_text = re.sub(r'\bmia\b', 'Meea', text, flags=re.IGNORECASE)
             
             # Use a temporary WAV file
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -297,9 +301,9 @@ class VoiceAgent:
             
             success = False
             
-            # Determine engine language parameters
-            pico_lang = "it-IT" if lang == "it" else "en-US"
-            espeak_lang = "it" if lang == "it" else "en-us+f5"
+            # ALWAYS use Italian for offline fallback to keep the voice consistent
+            pico_lang = "it-IT"
+            espeak_lang = "it"
             
             # STRATEGY 1: pico2wave (SVOX Pico) - High quality offline female voice
             pico_path = shutil.which("pico2wave")
