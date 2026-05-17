@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from agents.audio import VoiceAgent, STTAgent
 from agents.brain import BrainLLM, ResponseGenerator
 from .status_manager import StatusManager
+from storage.memory_manager import MemoryManager
 
 
 class Orchestrator:
@@ -25,10 +26,13 @@ class Orchestrator:
         self.status = StatusManager()
         self._llm_ready = threading.Event()  # Signals when LLM is loaded
 
+        # Initialize Memory Manager
+        self.memory = MemoryManager()
+
         # 1. Init lightweight agents first (fast: <1s each)
         self.voice = VoiceAgent()
         self.stt   = STTAgent(self.status)
-        self.brain = BrainLLM()
+        self.brain = BrainLLM(memory_manager=self.memory)
         self.generator = ResponseGenerator()
 
         # 2. Check connectivity (fast)
@@ -80,11 +84,13 @@ class Orchestrator:
                 self.status.set_state("speaking")
                 # Greeting ONLY now — LLM is truly ready
                 self.voice.speak("Ciao, sono MIA e sono pronta.", lang="it")
+                time.sleep(0.3)  # Wait 0.3s for physical room echo to decay
                 self.status.set_state("idle")
             else:
                 print("[Orchestrator] [Thread] LLM non caricato. Modalità fallback.")
                 self.status.set_state("speaking")
                 self.voice.speak("Ciao, sono MIA. Funziono in modalità ridotta.", lang="it")
+                time.sleep(0.3)  # Wait 0.3s for physical room echo to decay
                 self.status.set_state("idle")
         except Exception as e:
             print(f"[Orchestrator] [Thread] Errore: {e}")
@@ -99,21 +105,34 @@ class Orchestrator:
         if not user_text:
             return
 
+        # Active speaker (defaulting to "Michele" for now)
+        speaker = "Michele"
+
         self.status.language = lang
         self.status.set_state("processing")
         print(f"[Orchestrator] Input ({lang}): {user_text}")
 
-        # Generate response
-        raw_response = self.brain.generate_response(user_text, lang=lang)
+        # Generate response passing the speaker profile context
+        raw_response = self.brain.generate_response(user_text, lang=lang, speaker=speaker)
+
+        # Parse and save any permanent memory tags [MEM: ...]
+        cleaned_response = self.memory.parse_and_save_memory_tags(speaker, raw_response)
 
         # Format
-        final_text = self.generator.format_response(raw_response)
+        final_text = self.generator.format_response(cleaned_response)
         spoken_text = self.generator.prepare_for_speech(final_text)
 
         # Speak
         self.status.set_state("speaking")
         print(f"[MIA] ({lang}): {final_text}")
         self.voice.speak(spoken_text, lang=lang)
+
+        # Add both turns to the rolling short term memory history (60m window)
+        self.memory.add_interaction(speaker, "user", user_text)
+        self.memory.add_interaction(speaker, "assistant", cleaned_response)
+
+        # Wait 0.3s for physical room echo to decay before listening again
+        time.sleep(0.3)
 
         # Back to idle
         self.status.set_state("idle")
