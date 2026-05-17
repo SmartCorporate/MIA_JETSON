@@ -96,7 +96,6 @@ class BrainLLM:
             f"- Rispondi in modo estremamente conciso, diretto ed essenziale SOLO a quello che ti è stato espressamente chiesto. NON aggiungere mai saluti iniziali, introduzioni, preamboli o chiacchiere superflue non richieste.\n"
             f"- Massimo 1 o 2 frasi brevi. Evita assolutamente elenchi o spiegazioni prolisse.\n"
             f"- L'utente si chiama {speaker}. Mantieni un tono diretto, amichevole e naturale. NON ripetere continuamente il suo nome (usalo solo se strettamente necessario, al massimo una volta ogni 4 o 5 risposte).\n"
-            f"- Quando l'utente condivide fatti personali permanenti o preferenze importanti, memorizzali aggiungendo esplicitamente il tag '[MEM: categoria | descrizione fatto]' in fondo al tuo messaggio (ad esempio: '[MEM: preferenze | Ama il caffè amaro]').\n"
             f"- Oggi: {now.strftime('%d %B %Y')}. Ora corrente: {now.strftime('%H:%M')}.\n"
             f"{facts_block}"
         )

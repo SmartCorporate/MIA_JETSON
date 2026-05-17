@@ -9,7 +9,7 @@ import time
 import threading
 from dotenv import load_dotenv
 from agents.audio import VoiceAgent, STTAgent
-from agents.brain import BrainLLM, ResponseGenerator
+from agents.brain import BrainLLM, ResponseGenerator, MemoryAgent
 from .status_manager import StatusManager
 from storage.memory_manager import MemoryManager
 
@@ -33,6 +33,7 @@ class Orchestrator:
         self.voice = VoiceAgent()
         self.stt   = STTAgent(self.status)
         self.brain = BrainLLM(memory_manager=self.memory)
+        self.memory_agent = MemoryAgent(self.memory, self.brain)
         self.generator = ResponseGenerator()
 
         # 2. Check connectivity (fast)
@@ -115,11 +116,8 @@ class Orchestrator:
         # Generate response passing the speaker profile context
         raw_response = self.brain.generate_response(user_text, lang=lang, speaker=speaker)
 
-        # Parse and save any permanent memory tags [MEM: ...]
-        cleaned_response = self.memory.parse_and_save_memory_tags(speaker, raw_response)
-
         # Format
-        final_text = self.generator.format_response(cleaned_response)
+        final_text = self.generator.format_response(raw_response)
         spoken_text = self.generator.prepare_for_speech(final_text)
 
         # Speak
@@ -129,7 +127,14 @@ class Orchestrator:
 
         # Add both turns to the rolling short term memory history (60m window)
         self.memory.add_interaction(speaker, "user", user_text)
-        self.memory.add_interaction(speaker, "assistant", cleaned_response)
+        self.memory.add_interaction(speaker, "assistant", raw_response)
+
+        # Spawn asynchronous cognitive memory consolidator thread
+        threading.Thread(
+            target=self.memory_agent.consolidate_interaction,
+            args=(speaker, user_text, raw_response),
+            daemon=True
+        ).start()
 
         # Wait 0.3s for physical room echo to decay before listening again
         time.sleep(0.3)
@@ -148,8 +153,8 @@ class Orchestrator:
                 current = self.status.current_state
 
                 if current == "idle":
-                    # Listen (blocks for up to 5s)
-                    user_text, detected_lang = self.stt.listen(timeout=5)
+                    # Listen (blocks for up to 12s)
+                    user_text, detected_lang = self.stt.listen(timeout=12)
                     if user_text:
                         # Double-check that we are still in idle state (wasn't interrupted by speaking)
                         if self.status.current_state == "idle":
@@ -163,7 +168,7 @@ class Orchestrator:
 
                 elif current == "loading":
                     # Still loading LLM — listen anyway (fallback will respond)
-                    user_text, detected_lang = self.stt.listen(timeout=5)
+                    user_text, detected_lang = self.stt.listen(timeout=12)
                     if user_text:
                         # Double-check that the state didn't transition to speaking/idle during greeting
                         if self.status.current_state == "loading":

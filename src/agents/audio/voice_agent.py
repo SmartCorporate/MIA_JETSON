@@ -270,7 +270,8 @@ class VoiceAgent:
                     text=text,
                     voice_id=voice_to_use,
                     model_id="eleven_turbo_v2_5",
-                    output_format="mp3_44100_128"
+                    output_format="mp3_44100_128",
+                    language_code="it"
                 )
                 
                 # Save audio to temp file
