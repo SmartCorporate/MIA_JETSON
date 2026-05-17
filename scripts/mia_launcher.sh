@@ -17,11 +17,36 @@ echo "Launching MIA Dashboard..."
 > /home/mia/MIA_JETSON/error.log
 > /home/mia/MIA_JETSON/mia.log
 
+# Function to position a window exactly by its title using xdotool
+position_window() {
+    local title="$1"
+    local x="$2"
+    local y="$3"
+    local w="$4"
+    local h="$5"
+    
+    local win_id=""
+    for i in {1..25}; do
+        win_id=$(DISPLAY=:0 xdotool search --name "$title" 2>/dev/null | tail -n 1)
+        if [ -n "$win_id" ]; then
+            break
+        fi
+        sleep 0.2
+    done
+    
+    if [ -n "$win_id" ]; then
+        DISPLAY=:0 xdotool windowmove "$win_id" "$x" "$y"
+        DISPLAY=:0 xdotool windowsize "$win_id" "$w" "$h"
+        echo "Snapping '$title' -> pos:(${x}, ${y}) size:(${w}x${h})"
+    else
+        echo "Warning: Window '$title' not found on desktop"
+    fi
+}
+
 # 1. GREEN: Main MIA Process
 # stdout is written to mia.log and displayed.
 # stderr (llama.cpp verbose) → filtered: only real ERRORS go to error.log in real-time.
 xterm -title 'MIA - LIVE RUN' \
-      -geometry 110x30+10+10 \
       -fa 'Monospace' -fs 11 \
       -bg black -fg '#00FF00' \
       -e bash -c '
@@ -35,20 +60,18 @@ xterm -title 'MIA - LIVE RUN' \
         read
       ' &
 
-sleep 0.5
+sleep 0.2
 
 # 2. CYAN: System Status Monitor
 xterm -title 'MIA - SYSTEM STATUS' \
-      -geometry 100x32+10+500 \
       -fa 'Monospace' -fs 10 \
       -bg black -fg '#00FFFF' \
       -e "python3 /home/mia/MIA_JETSON/scripts/jetson_status_monitor.py" &
 
-sleep 0.3
+sleep 0.2
 
 # 3. YELLOW: Live log (INFO only, no llama.cpp noise)
 xterm -title 'MIA - LIVE LOG' \
-      -geometry 90x18+900+10 \
       -fa 'Monospace' -fs 9 \
       -bg black -fg '#FFFF00' \
       -e bash -c '
@@ -57,11 +80,10 @@ xterm -title 'MIA - LIVE LOG' \
           || echo "Waiting for log..."
       ' &
 
-sleep 0.3
+sleep 0.2
 
 # 4. RED: Real errors only (filtered — no llama verbose spam)
 xterm -title 'MIA - ERRORS' \
-      -geometry 90x18+900+410 \
       -fa 'Monospace' -fs 9 \
       -bg black -fg '#FF0000' \
       -e bash -c '
@@ -69,5 +91,12 @@ xterm -title 'MIA - ERRORS' \
         tail -f /home/mia/MIA_JETSON/error.log 2>/dev/null \
           || echo "No errors yet."
       ' &
+
+# ── Dynamic snapping to your exact layout ───────────────────────────────────
+echo "Snapping windows to your layout..."
+position_window "MIA - LIVE LOG" 98 143 690 469
+position_window "MIA - LIVE RUN" 99 664 634 202
+position_window "MIA - SYSTEM STATUS" 102 911 556 310
+position_window "MIA - ERRORS" 95 1273 634 49
 
 echo "Dashboard launched successfully."
