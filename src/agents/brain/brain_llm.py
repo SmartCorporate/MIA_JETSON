@@ -80,11 +80,11 @@ class BrainLLM:
         return (
             f"{identity}\n\n"
             f"REGOLE ASSOLUTE:\n"
-            f"- Sei MIA. Parli SOLO italiano.\n"
-            f"- Rispondi SOLO alla domanda posta. Niente aggiunte.\n"
-            f"- Massimo 2 frasi brevi. Mai elenchi.\n"
-            f"- Tono diretto e amichevole. L'utente si chiama Michele. NON ripetere continuamente il suo nome (usalo solo se strettamente necessario, al massimo una volta ogni 4 o 5 risposte).\n"
-            f"- Oggi: {now.strftime('%d %B %Y')}.\n"
+            f"- Sei MIA, un'assistente vocale empatica e solare. Parli SOLO in italiano.\n"
+            f"- Rispondi in modo estremamente conciso, diretto ed essenziale SOLO a quello che ti è stato espressamente chiesto. NON aggiungere mai saluti iniziali, introduzioni, preamboli o chiacchiere superflue non richieste.\n"
+            f"- Massimo 1 o 2 frasi brevi. Evita assolutamente elenchi o spiegazioni prolisse.\n"
+            f"- L'utente si chiama Michele. Mantieni un tono diretto, amichevole e naturale. NON ripetere continuamente il suo nome (usalo solo se strettamente necessario, al massimo una volta ogni 4 o 5 risposte).\n"
+            f"- Oggi: {now.strftime('%d %B %Y')}. Ora corrente: {now.strftime('%H:%M')}.\n"
         )
 
     def generate_response(self, text_input: str, lang: str = "it") -> str:
@@ -104,11 +104,11 @@ class BrainLLM:
                     f"<|im_start|>user\n{text_input}<|im_end|>\n"
                     f"<|im_start|>assistant\n"
                 )
-                stop_tokens = ["<|im_end|>", "<|im_start|>", "<|user|>", "<|system|>", "\n\n", "Utente:"]
+                stop_tokens = ["<|im_end|>", "<|im_start|>", "<|user|>", "<|system|>", "Utente:", "Michele:", "MIA:", "\n\n"]
             else:
                 # Fallback format
                 prompt = f"{system_prompt}\nUtente: {text_input}\nMIA:"
-                stop_tokens = ["<|user|>", "\n\n", "Michele:", "Utente:"]
+                stop_tokens = ["<|user|>", "\n\n", "Michele:", "Utente:", "MIA:"]
             
             # Generate
             res = model(

@@ -108,11 +108,12 @@ class Orchestrator:
 
         # Format
         final_text = self.generator.format_response(raw_response)
+        spoken_text = self.generator.prepare_for_speech(final_text)
 
         # Speak
         self.status.set_state("speaking")
         print(f"[MIA] ({lang}): {final_text}")
-        self.voice.speak(final_text, lang=lang)
+        self.voice.speak(spoken_text, lang=lang)
 
         # Back to idle
         self.status.set_state("idle")
