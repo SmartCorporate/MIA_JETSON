@@ -245,7 +245,7 @@ class VoiceAgent:
                 audio_generator = self.elevenlabs_client.text_to_speech.convert(
                     text=text,
                     voice_id=voice_to_use,
-                    model_id="eleven_multilingual_v2",
+                    model_id="eleven_turbo_v2_5",
                     output_format="mp3_44100_128"
                 )
                 
