@@ -27,7 +27,7 @@ class Orchestrator:
 
         # 1. Init lightweight agents first (fast: <1s each)
         self.voice = VoiceAgent()
-        self.stt   = STTAgent()
+        self.stt   = STTAgent(self.status)
         self.brain = BrainLLM()
         self.generator = ResponseGenerator()
 

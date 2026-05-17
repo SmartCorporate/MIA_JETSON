@@ -37,6 +37,12 @@ position_window() {
     if [ -n "$win_id" ]; then
         DISPLAY=:0 xdotool windowmove "$win_id" "$x" "$y"
         DISPLAY=:0 xdotool windowsize "$win_id" "$w" "$h"
+        # Dual-Lock: Re-apply 0.8s later in background to cancel out window manager shifts or decorations!
+        (
+            sleep 0.8
+            DISPLAY=:0 xdotool windowmove "$win_id" "$x" "$y"
+            DISPLAY=:0 xdotool windowsize "$win_id" "$w" "$h"
+        ) &
         echo "Snapping '$title' -> pos:(${x}, ${y}) size:(${w}x${h})"
     else
         echo "Warning: Window '$title' not found on desktop"
@@ -94,9 +100,9 @@ xterm -title 'MIA - ERRORS' \
 
 # ── Dynamic snapping to your exact layout ───────────────────────────────────
 echo "Snapping windows to your layout..."
-position_window "MIA - LIVE LOG" 98 143 690 469
-position_window "MIA - LIVE RUN" 99 664 634 202
-position_window "MIA - SYSTEM STATUS" 102 911 556 310
-position_window "MIA - ERRORS" 95 1273 634 49
+position_window "MIA - ERRORS" 99 125 690 124
+position_window "MIA - LIVE LOG" 99 303 690 394
+position_window "MIA - LIVE RUN" 98 746 697 202
+position_window "MIA - SYSTEM STATUS" 97 1001 532 310
 
 echo "Dashboard launched successfully."

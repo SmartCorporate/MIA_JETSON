@@ -14,7 +14,8 @@ import sounddevice as sd
 import vosk
 
 class STTAgent:
-    def __init__(self):
+    def __init__(self, status_manager=None):
+        self.status = status_manager
         self.audio_queue = queue.Queue()
         self.models = {}
         self.recognizers = {}
@@ -165,6 +166,11 @@ class STTAgent:
         """Called from a separate thread for each audio block."""
         if status:
             print(f"[STT Status] {status}", file=sys.stderr)
+            
+        # Stop listening entirely if MIA is speaking or processing her response
+        if self.status and self.status.current_state in ["speaking", "processing"]:
+            return
+            
         self.audio_queue.put(bytes(indata))
 
     def flush_queue(self):
