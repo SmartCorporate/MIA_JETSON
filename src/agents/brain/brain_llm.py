@@ -1,7 +1,7 @@
 """
 MIA_JETSON - Brain LLM Module
 Processes text input using local LLMs (llama.cpp).
-Integrates Identity from MIA_Identity.md.
+STABLE VERSION.
 """
 import os
 import json
@@ -20,65 +20,49 @@ class BrainLLM:
             full_path = os.path.join(self.base_dir, path)
             with open(full_path, 'r', encoding='utf-8') as f:
                 base_cfg = json.load(f)
-            
-            # Desktop Config
-            try:
-                from core.config_loader import load_general_config
-                gen_cfg = load_general_config()
-                base_cfg["general"] = gen_cfg
-                # Check for QWEN_7B_SMART
-                smart_path = os.path.join(self.base_dir, base_cfg["models"]["qwen_smart"]["path"])
-                if os.path.exists(smart_path):
-                    base_cfg["default_model"] = "qwen_smart"
-                else:
-                    base_cfg["default_model"] = "qwen_fast"
-            except:
-                base_cfg["general"] = {}
-                base_cfg["default_model"] = "qwen_fast"
-                 
             return base_cfg
-        except Exception as e:
-            print(f"[BrainLLM Warning] {e}")
+        except:
             return {"offline_mode": True}
 
     def load_model(self, model_key=None):
-        default_key = self.config.get("default_model", "qwen_smart")
-        key = model_key if model_key else default_key
+        # Default logic for stable loading
+        key = "qwen_smart"
         success = self._load_single(key, self.config["models"].get(key, {}))
-        
-        if not success and key == "qwen_smart":
-            print("[BrainLLM] Fallback automatico su 1.5B...")
+        if not success:
             success = self._load_single("qwen_fast", self.config["models"]["qwen_fast"])
-            
         self.is_ready = success
         return success
 
     def _load_single(self, key, model_info):
         rel_path = model_info.get("path")
-        if not rel_path: return False
         model_path = os.path.join(self.base_dir, rel_path)
-        
         if not os.path.exists(model_path): return False
-        
         try:
             from llama_cpp import Llama
-            print(f"[BrainLLM] Caricamento {key}...")
-            self.models[key] = Llama(
-                model_path=model_path,
-                n_ctx=1024,
-                n_gpu_layers=-1,
-                n_threads=4,
-                n_batch=512,
-                f16_kv=True,
-                use_mmap=True,
-                verbose=False,
-            )
-            # SALVA MODELLO ATTIVO PER IL MONITOR
+            import sys, os as _os
+            # Suppress llama.cpp verbose stderr (KV cache, layer assignments)
+            devnull = open(_os.devnull, 'w')
+            old_stderr = sys.stderr
+            sys.stderr = devnull
+            try:
+                self.models[key] = Llama(
+                    model_path=model_path,
+                    n_ctx=model_info.get("n_ctx", 1024),  # Use configured context size (1024+) to fit identity + rules
+                    n_gpu_layers=model_info.get("n_gpu_layers", -1),
+                    n_threads=model_info.get("n_threads", 4),
+                    n_batch=128,         # Smaller batch = lower power = less throttling
+                    verbose=False
+                )
+            finally:
+                sys.stderr = old_stderr
+                devnull.close()
+            # Save active model tag
+            gpu_status = "[GPU]" if model_info.get("n_gpu_layers", -1) != 0 else "[CPU]"
             with open("/tmp/mia_active_model", "w") as f:
-                f.write(model_info.get("name", key))
+                f.write(f"{model_info.get('name', key)} {gpu_status}")
             return True
         except Exception as e:
-            print(f"[BrainLLM Error] {e}")
+            print(f"[Brain Error] Load failed: {e}")
             return False
 
     def _read_identity(self):
@@ -86,50 +70,61 @@ class BrainLLM:
             if os.path.exists(self.identity_path):
                 with open(self.identity_path, "r", encoding="utf-8") as f:
                     return f.read()
-            return "Sei MIA, un'assistente umanoide femminile empatica."
+            return "Io sono MIA, un'assistente artificiale."
         except:
-            return "Sei MIA, assistente umanoide."
+            return "Io sono MIA."
 
     def _build_system_prompt(self):
-        gen = self.config.get("general", {})
-        conc = gen.get("CONCISIONE", 3)
-        identity_text = self._read_identity()
-        
-        # INSTRUCTIONS
-        conc_instr = "Rispondi in massimo 15 parole." if conc >= 4 else "Puoi essere discorsiva."
-        
-        system = f"""
-{identity_text}
-
-ISTRUZIONI DI SICUREZZA IDENTITÀ:
-- TU SEI MIA. L'UTENTE È MICHELE.
-- Parla SEMPRE in prima persona (IO). Usa il possessivo "MIO/MIA" per te stessa.
-- Il TUO creatore è Michele Zaniolo.
-- Tono: Sii sempre FELICE, POSITIVA e SOLARE. Ispira fiducia.
-- Rispondi sempre in ITALIANO.
-- {conc_instr}
-Data/Ora corrente: {datetime.now().strftime('%d/%m %H:%M')}
-"""
-        return system.strip()
+        now = datetime.now()
+        identity = self._read_identity()
+        return (
+            f"{identity}\n\n"
+            f"REGOLE ASSOLUTE:\n"
+            f"- Sei MIA. Parli SOLO italiano.\n"
+            f"- Rispondi SOLO alla domanda posta. Niente aggiunte.\n"
+            f"- Massimo 2 frasi brevi. Mai elenchi.\n"
+            f"- Tono diretto e amichevole. L'utente si chiama Michele. NON ripetere continuamente il suo nome (usalo solo se strettamente necessario, al massimo una volta ogni 4 o 5 risposte).\n"
+            f"- Oggi: {now.strftime('%d %B %Y')}.\n"
+        )
 
     def generate_response(self, text_input: str, lang: str = "it") -> str:
-        if not self.is_ready: return "Caricamento..."
-        model = next(iter(self.models.values()))
+        if not self.is_ready: return "Non sono ancora pronta."
+        
+        # Get active model key and model instance
+        model_key = next(iter(self.models.keys()))
+        model = self.models[model_key]
         
         try:
-            gen = self.config.get("general", {})
-            max_t = {1:15, 2:40, 3:80, 4:150, 5:300}.get(gen.get("LUNGHEZZA", 2), 40)
+            system_prompt = self._build_system_prompt()
             
-            prompt = f"<|system|>\n{self._build_system_prompt()}\n<|user|>\n{text_input}\n<|assistant|>\n"
-            response = model(
+            # Format using ChatML if it is a Qwen model
+            if "qwen" in model_key.lower():
+                prompt = (
+                    f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+                    f"<|im_start|>user\n{text_input}<|im_end|>\n"
+                    f"<|im_start|>assistant\n"
+                )
+                stop_tokens = ["<|im_end|>", "<|im_start|>", "<|user|>", "<|system|>", "\n\n", "Utente:"]
+            else:
+                # Fallback format
+                prompt = f"{system_prompt}\nUtente: {text_input}\nMIA:"
+                stop_tokens = ["<|user|>", "\n\n", "Michele:", "Utente:"]
+            
+            # Generate
+            res = model(
                 prompt,
-                max_tokens=max_t,
-                stop=["<|user|>", "<|system|>"],
-                temperature=0.5, # Slightly higher for "personality"
-                repeat_penalty=1.1,
+                max_tokens=100,          # Allow complete, natural sentences
+                stop=stop_tokens,
+                temperature=0.2,         # Low temp = highly focused & deterministic
+                repeat_penalty=1.1
             )
-            reply = response['choices'][0]['text'].strip()
-            if not reply: return "Scusa, non ho capito."
-            return reply
-        except:
-            return "Errore di elaborazione."
+            
+            answer = res["choices"][0]["text"].strip()
+            # Strip any self-referencing prefix like "MIA:" or "Risposta:"
+            for prefix in ["MIA:", "Risposta:", "A:", "R:"]:
+                if answer.lower().startswith(prefix.lower()):
+                    answer = answer[len(prefix):].strip()
+            return answer
+        except Exception as e:
+            print(f"[Brain Error] {e}")
+            return "Ho avuto un problema tecnico."

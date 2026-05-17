@@ -1,17 +1,17 @@
 {
-    "default_model": "qwen_fast",
+    "default_model": "qwen_smart",
     "models": {
         "qwen_fast": {
             "path": "models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf",
             "name": "Qwen 1.5B (Fast)",
-            "n_ctx": 1024,
+            "n_ctx": 1536,
             "n_gpu_layers": -1,
             "n_threads": 4
         },
         "qwen_smart": {
             "path": "models/llm/QWEN_7B_SMART.gguf",
             "name": "Qwen 7B (Smart)",
-            "n_ctx": 1024,
+            "n_ctx": 1536,
             "n_gpu_layers": -1,
             "n_threads": 4
         },

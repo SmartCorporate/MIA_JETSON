@@ -8,12 +8,12 @@ import re
 
 class ResponseGenerator:
     def __init__(self):
-        self.max_chars = 400  # Max spoken characters
+        self.max_chars = 200  # Max spoken characters — keep it short
 
     def format_response(self, raw_text: str) -> str:
         """Clean and format raw LLM output for TTS."""
         if not raw_text:
-            return "Non sono riuscita a generare una risposta."
+            return "Non ho capito."
 
         clean = raw_text.strip()
 
@@ -43,7 +43,7 @@ class ResponseGenerator:
 
         # Final safety: if empty after cleaning
         if not clean:
-            return "Non ho capito. Puoi ripetere?"
+            return "Non ho capito. Ripeti per favore."
 
         return clean
 

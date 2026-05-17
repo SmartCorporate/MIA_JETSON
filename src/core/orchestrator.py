@@ -1,8 +1,7 @@
 """
 MIA_JETSON - Central Orchestrator
 Coordinates modules and manages global system flow.
-KEY OPTIMIZATION: Greeting fires IMMEDIATELY at boot,
-then LLM loads in a background thread (masked loading).
+KEY: Greeting fires ONLY when LLM is fully loaded and ready.
 """
 import os
 import socket
@@ -51,50 +50,44 @@ class Orchestrator:
     # ------------------------------------------------------------------
     def startup(self):
         """
-        Fast startup sequence:
-        1. Say welcome greeting IMMEDIATELY
-        2. Load LLM in background thread (user doesn't wait)
-        3. Notify with a short sound/message when brain is ready
+        Startup sequence:
+        1. Set state to loading (silent — no greeting yet)
+        2. Load LLM in background thread
+        3. When LLM is ready, THEN say greeting
         """
-        # Step 1: Greet immediately (before LLM loads)
-        online_text = "online" if self.status.is_online else "offline"
-        greeting = "Ciao, sono MIA. Mi sto attivando."
-        print(f"[Orchestrator] Saluto immediato: {greeting}")
-        self.status.set_state("speaking")
-        self.voice.speak(greeting, lang="it")
         self.status.set_state("loading")
+        print("[Orchestrator] Caricamento LLM in background...")
 
-        # Step 2: Start background LLM loading thread
         load_thread = threading.Thread(
             target=self._background_load_llm,
             name="LLM-Loader",
             daemon=True
         )
         load_thread.start()
-        print("[Orchestrator] Caricamento LLM in background avviato...")
 
     def _background_load_llm(self):
-        """Loads the primary LLM in background; signals when done."""
+        """Loads the primary LLM in background; greets ONLY when done."""
         try:
             print("[Orchestrator] [Thread] Caricamento modello LLM...")
             success = self.brain.load_model()
-            
-            # KEY FIX: Wait a moment for system to stabilize after VRAM allocation
-            time.sleep(1.5)
+
+            # Stabilize after VRAM allocation
+            time.sleep(1.0)
             self._llm_ready.set()
 
             if success:
-                print("[Orchestrator] [Thread] LLM caricato OK. MIA è pronta.")
+                print("[Orchestrator] [Thread] LLM pronto. MIA attiva.")
+                self.status.set_state("speaking")
+                # Greeting ONLY now — LLM is truly ready
+                self.voice.speak("Ciao, sono MIA e sono pronta.", lang="it")
                 self.status.set_state("idle")
-                # Ora che il cervello è caricato E stabilizzato, diciamo Pronta
-                self.voice.speak("Sono pronta.", lang="it")
             else:
                 print("[Orchestrator] [Thread] LLM non caricato. Modalità fallback.")
+                self.status.set_state("speaking")
+                self.voice.speak("Ciao, sono MIA. Funziono in modalità ridotta.", lang="it")
                 self.status.set_state("idle")
-                # MIA è pronta anche se in fallback, non serve dirlo all'utente
-                pass
         except Exception as e:
-            print(f"[Orchestrator] [Thread] Errore caricamento LLM: {e}")
+            print(f"[Orchestrator] [Thread] Errore: {e}")
             self._llm_ready.set()
             self.status.set_state("idle")
 
@@ -138,17 +131,27 @@ class Orchestrator:
                     # Listen (blocks for up to 5s)
                     user_text, detected_lang = self.stt.listen(timeout=5)
                     if user_text:
-                        # If LLM is still loading, still process (fallback will handle it)
-                        self.process_interaction(user_text, lang=detected_lang or "it")
-                        time.sleep(0.8)
-                        self.stt.flush_queue()
+                        # Double-check that we are still in idle state (wasn't interrupted by speaking)
+                        if self.status.current_state == "idle":
+                            self.process_interaction(user_text, lang=detected_lang or "it")
+                            # Aumentato a 3 secondi per evitare che senta l'eco della propria voce
+                            time.sleep(3.0)
+                            self.stt.flush_queue()
+                        else:
+                            print("[Orchestrator] Discarding STT input captured during non-idle state (echo prevention).")
+                            self.stt.flush_queue()
 
                 elif current == "loading":
                     # Still loading LLM — listen anyway (fallback will respond)
                     user_text, detected_lang = self.stt.listen(timeout=5)
                     if user_text:
-                        self.process_interaction(user_text, lang=detected_lang or "it")
-                        self.stt.flush_queue()
+                        # Double-check that the state didn't transition to speaking/idle during greeting
+                        if self.status.current_state == "loading":
+                            self.process_interaction(user_text, lang=detected_lang or "it")
+                            self.stt.flush_queue()
+                        else:
+                            print("[Orchestrator] Discarding STT input captured during background greeting load.")
+                            self.stt.flush_queue()
 
                 time.sleep(0.1)
 

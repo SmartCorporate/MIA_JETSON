@@ -4,6 +4,11 @@ import paramiko
 from dotenv import load_dotenv
 
 def run_cmd():
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass  # Python version doesn't support reconfigure
     if len(sys.argv) < 2:
         print("Usage: python run_cmd_on_jetson.py \"command\"")
         return

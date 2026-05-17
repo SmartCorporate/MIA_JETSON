@@ -139,11 +139,22 @@ class STTAgent:
                         result = json.loads(rec.Result())
                         text = result.get("text", "").strip()
                         if text:
-                            print(f"[STT] Heard: '{text}'")
+                            print(f"[STT] Heard (complete): '{text}'")
                             rec.Reset()
                             return text, "it"
                 except queue.Empty:
                     continue
+
+            # Timeout reached — retrieve any leftover transcribed text from the final result buffer!
+            try:
+                result = json.loads(rec.FinalResult())
+                text = result.get("text", "").strip()
+                if text:
+                    print(f"[STT] Heard (final/timeout): '{text}'")
+                    rec.Reset()
+                    return text, "it"
+            except Exception as e:
+                print(f"[STT Error] Failed to read final result: {e}")
 
         return None, None
 

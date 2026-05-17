@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Exec=/bin/bash /home/mia/MIA_JETSON/scripts/mia_launcher.sh
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+Name[it_IT]=MIA Dashboard
+Name=MIA Dashboard
+Comment[it_IT]=Avvia i terminali di controllo di MIA
+Comment=Starts MIA control terminals
