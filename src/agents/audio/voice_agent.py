@@ -165,9 +165,33 @@ class VoiceAgent:
             # Play WAV with aplay (up to 3 attempts for busy device)
             cmd = ["aplay", "-D", self.alsa_device, play_path]
             print(f"[Audio] Playing: {' '.join(cmd)}")
+            
+            # Read WAV physical duration to coordinate with microphone lock
+            import wave
+            import time as _time
+            duration = 0.0
+            try:
+                with wave.open(play_path, 'rb') as w_file:
+                    frames = w_file.getnframes()
+                    rate = w_file.getframerate()
+                    duration = frames / float(rate)
+                    print(f"[Audio] WAV Duration: {duration:.2f} seconds")
+            except Exception as w_err:
+                print(f"[Audio Warning] Could not calculate WAV duration: {w_err}")
+
+            start_time = _time.time()
             for attempt in range(3):
                 try:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                    
+                    # Wait for the physical duration plus a 0.5s safety margin to clear ALSA buffer & room decay!
+                    elapsed = _time.time() - start_time
+                    remaining = duration - elapsed
+                    if remaining > 0:
+                        print(f"[Audio] Blocking for remaining physical playback buffer: {remaining:.2f}s")
+                        _time.sleep(remaining)
+                    _time.sleep(0.5)  # Physical sound wave decay padding
+
                     # Clean up converted WAV if we made one
                     if play_path != filepath and os.path.exists(play_path):
                         try:
