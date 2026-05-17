@@ -129,8 +129,9 @@ class STTAgent:
             channels=self.channels,          # Always 1 (MONO)
             callback=self._audio_callback
         ):
-            # Flush any stale audio
+            # Flush any stale audio and reset recognizer history
             self.flush_queue()
+            rec.Reset()
 
             start_time = time.time()
             while time.time() - start_time < timeout:
